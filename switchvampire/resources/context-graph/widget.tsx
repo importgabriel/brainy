@@ -4,6 +4,7 @@ import { z } from "zod";
 import ContextGraph from "../components/ContextGraph";
 import NodeDetail from "../components/NodeDetail";
 import QueryBar from "../components/QueryBar";
+import RoutingCard from "../components/RoutingCard";
 import type { ContextGraphNode, ContextGraphEdge } from "../components/ContextGraph";
 
 const nodeSchema = z.object({
@@ -40,6 +41,13 @@ export const widgetMetadata: WidgetMetadata = {
 };
 
 const noop = () => {};
+
+const ROUTING_SUGGESTION = {
+  platform: "Claude 3.7 Sonnet",
+  color: "#d97706",
+  reason: "handles SQL migrations with 40% higher accuracy for your established patterns.",
+  nodeCount: 3,
+} as const;
 
 /* ── Header ──────────────────────────────────────────── */
 
@@ -189,6 +197,7 @@ const ContextGraphWidget: React.FC = () => {
   const { props, isPending } = useWidget<ContextGraphWidgetProps>();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [showRouting, setShowRouting] = useState(false);
 
   const handleNodeSelect = useCallback(
     (nodeId: string | null, _connectedIds: Set<string>) => {
@@ -264,6 +273,7 @@ const ContextGraphWidget: React.FC = () => {
           borderRadius: "8px",
           border: "1px solid #1f2430",
           overflow: "hidden",
+          position: "relative",
         }}
       >
         <Header confidencePercent={confidencePercent} />
@@ -283,7 +293,7 @@ const ContextGraphWidget: React.FC = () => {
           <NodeDetail
             node={selectedNode}
             connectionCount={connectionCount}
-            onRoute={noop}
+            onRoute={() => setShowRouting(true)}
             onEdit={noop}
             onDelete={noop}
           />
@@ -293,6 +303,13 @@ const ContextGraphWidget: React.FC = () => {
           edgeCount={edges.length}
           activeCount={selectedNodeId ? 1 : 0}
         />
+        {showRouting && (
+          <RoutingCard
+            recommended={ROUTING_SUGGESTION}
+            onAccept={() => setShowRouting(false)}
+            onDismiss={() => setShowRouting(false)}
+          />
+        )}
       </div>
     </McpUseProvider>
   );

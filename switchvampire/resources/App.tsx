@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo } from "react";
 import ContextGraph from "./components/ContextGraph";
 import NodeDetail from "./components/NodeDetail";
 import QueryBar from "./components/QueryBar";
+import RoutingCard from "./components/RoutingCard";
 import type { ContextGraphNode, ContextGraphEdge } from "./components/ContextGraph";
 
 const nodes: ContextGraphNode[] = [
@@ -38,6 +39,13 @@ const edges: ContextGraphEdge[] = [
 ];
 
 const noop = () => {};
+
+const ROUTING_SUGGESTION = {
+  platform: "Claude 3.7 Sonnet",
+  color: "#d97706",
+  reason: "handles SQL migrations with 40% higher accuracy for your established patterns.",
+  nodeCount: 3,
+} as const;
 
 /* ── Header ──────────────────────────────────────────── */
 
@@ -186,6 +194,7 @@ const Footer: React.FC<{
 const App: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [showRouting, setShowRouting] = useState(false);
 
   /* Compute relevant node IDs from query (frontend-only string match) */
   const relevantNodeIds = useMemo(() => {
@@ -252,6 +261,7 @@ const App: React.FC = () => {
             border: "1px solid #1f2430",
             borderRadius: "8px",
             overflow: "hidden",
+            position: "relative",
           }}
         >
           <Header confidencePercent={confidencePercent} />
@@ -271,7 +281,7 @@ const App: React.FC = () => {
             <NodeDetail
               node={selectedNode}
               connectionCount={connectionCount}
-              onRoute={noop}
+              onRoute={() => setShowRouting(true)}
               onEdit={noop}
               onDelete={noop}
             />
@@ -281,6 +291,13 @@ const App: React.FC = () => {
             edgeCount={edges.length}
             activeCount={selectedNodeId ? 1 : 0}
           />
+          {showRouting && (
+            <RoutingCard
+              recommended={ROUTING_SUGGESTION}
+              onAccept={() => setShowRouting(false)}
+              onDismiss={() => setShowRouting(false)}
+            />
+          )}
         </div>
       </div>
     </div>
