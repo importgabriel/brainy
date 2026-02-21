@@ -103,6 +103,61 @@ server.tool(
   }
 );
 
+// Context graph node/edge data
+const contextNodes = [
+  { id: "nextjs", label: "Next.js", category: "project", source: "claude", x: 350, y: 80, confidence: 0.95 },
+  { id: "typescript", label: "TypeScript", category: "project", source: "chatgpt", x: 200, y: 130, confidence: 0.9 },
+  { id: "supabase", label: "Supabase", category: "project", source: "claude", x: 500, y: 130, confidence: 0.85 },
+  { id: "pgvector", label: "pgvector", category: "code", source: "chatgpt", x: 600, y: 220, confidence: 0.7 },
+  { id: "ceo", label: "CEO Role", category: "fact", source: "claude", x: 100, y: 250, confidence: 0.8 },
+  { id: "preseed", label: "Pre-seed Raise", category: "decision", source: "perplexity", x: 250, y: 320, confidence: 0.75 },
+  { id: "uga", label: "UGA Target", category: "fact", source: "gemini", x: 400, y: 380, confidence: 0.6 },
+  { id: "kayak", label: "Kayak for AI", category: "project", source: "chatgpt", x: 150, y: 380, confidence: 0.85 },
+  { id: "darktheme", label: "Dark Theme Pref", category: "preference", source: "claude", x: 550, y: 320, confidence: 0.65 },
+  { id: "concise", label: "Concise Pref", category: "preference", source: "chatgpt", x: 450, y: 250, confidence: 0.6 },
+  { id: "gpt4mini", label: "GPT-4.1 Mini Router", category: "code", source: "chatgpt", x: 300, y: 200, confidence: 0.8 },
+  { id: "starter", label: "$14.99 Starter Tier", category: "decision", source: "perplexity", x: 100, y: 130, confidence: 0.7 },
+];
+
+const contextEdges = [
+  { from: "nextjs", to: "typescript" },
+  { from: "nextjs", to: "supabase" },
+  { from: "supabase", to: "pgvector" },
+  { from: "nextjs", to: "gpt4mini" },
+  { from: "typescript", to: "gpt4mini" },
+  { from: "ceo", to: "preseed" },
+  { from: "ceo", to: "kayak" },
+  { from: "preseed", to: "starter" },
+  { from: "kayak", to: "gpt4mini" },
+  { from: "kayak", to: "uga" },
+  { from: "darktheme", to: "concise" },
+  { from: "supabase", to: "darktheme" },
+  { from: "starter", to: "uga" },
+  { from: "pgvector", to: "gpt4mini" },
+  { from: "preseed", to: "uga" },
+];
+
+server.tool(
+  {
+    name: "show-context-graph",
+    description: "Display the SwitchMemory context graph showing user knowledge nodes and relationships",
+    schema: z.object({}),
+    widget: {
+      name: "context-graph",
+      invoking: "Loading context graph...",
+      invoked: "Context graph loaded",
+    },
+  },
+  async () => {
+    return widget({
+      props: { nodes: contextNodes, edges: contextEdges },
+      output: text(
+        `Displaying context graph with ${contextNodes.length} nodes and ${contextEdges.length} edges`
+      ),
+    });
+  }
+);
+
 server.listen().then(() => {
   console.log(`Server running`);
 });
