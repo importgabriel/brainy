@@ -202,6 +202,44 @@ const ContextGraphWidget: React.FC = () => {
     []
   );
 
+  const nodes = isPending ? [] : (props.nodes as ContextGraphNode[]);
+  const edges = isPending ? [] : (props.edges as ContextGraphEdge[]);
+
+  /* Compute relevant node IDs from query (frontend-only string match) */
+  const relevantNodeIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    return new Set(
+      nodes
+        .filter((n) => {
+          const label = (n.label || "").toLowerCase();
+          const category = (n.category || "").toLowerCase();
+          const source = (n.source || "").toLowerCase();
+          return label.includes(q) || category.includes(q) || source.includes(q);
+        })
+        .map((n) => n.id)
+    );
+  }, [query, nodes]);
+
+  const selectedNode = useMemo(
+    () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null),
+    [selectedNodeId, nodes]
+  );
+
+  const connectionCount = useMemo(() => {
+    if (!selectedNodeId) return 0;
+    return edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length;
+  }, [selectedNodeId, edges]);
+
+  /* CTX meter: relevance-based when query is active */
+  const relevantCount = relevantNodeIds.size;
+  const activeRelevantCount =
+    selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
+  const confidencePercent =
+    relevantCount > 0
+      ? Math.round((activeRelevantCount / relevantCount) * 100)
+      : 0;
+
   if (isPending) {
     return (
       <McpUseProvider>
@@ -223,41 +261,6 @@ const ContextGraphWidget: React.FC = () => {
     );
   }
 
-  const { nodes, edges } = props;
-
-  /* Compute relevant node IDs from query (frontend-only string match) */
-  const relevantNodeIds = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return new Set<string>();
-    return new Set(
-      (nodes as ContextGraphNode[])
-        .filter((n) => {
-          const label = (n.label || "").toLowerCase();
-          const category = (n.category || "").toLowerCase();
-          const source = (n.source || "").toLowerCase();
-          return label.includes(q) || category.includes(q) || source.includes(q);
-        })
-        .map((n) => n.id)
-    );
-  }, [query, nodes]);
-
-  const selectedNode = selectedNodeId
-    ? (nodes as ContextGraphNode[]).find((n) => n.id === selectedNodeId) ?? null
-    : null;
-
-  const connectionCount = selectedNodeId
-    ? edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length
-    : 0;
-
-  /* CTX meter: relevance-based when query is active */
-  const relevantCount = relevantNodeIds.size;
-  const activeRelevantCount =
-    selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
-  const confidencePercent =
-    relevantCount > 0
-      ? Math.round((activeRelevantCount / relevantCount) * 100)
-      : 0;
-
   return (
     <McpUseProvider>
       <div
@@ -277,8 +280,8 @@ const ContextGraphWidget: React.FC = () => {
           onClear={() => setQuery("")}
         />
         <ContextGraph
-          nodes={nodes as ContextGraphNode[]}
-          edges={edges as ContextGraphEdge[]}
+          nodes={nodes}
+          edges={edges}
           onNodeSelect={handleNodeSelect}
         />
         {selectedNode && (
