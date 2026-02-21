@@ -1,8 +1,15 @@
-import { McpUseProvider, useWidget, useCallTool, type WidgetMetadata } from "mcp-use/react";
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import {
+  McpUseProvider,
+  useWidget,
+  useCallTool,
+  type WidgetMetadata,
+} from "mcp-use/react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { z } from "zod";
 import ContextGraph from "../components/ContextGraph";
 import NodeDetail from "../components/NodeDetail";
+import QueryBar from "../components/QueryBar";
+import RoutingCard from "../components/RoutingCard";
 import type { ContextGraphNode, ContextGraphEdge } from "../components/ContextGraph";
 
 // ─── Backend node schema (matches ContextNode from store.ts) ──
@@ -22,12 +29,20 @@ const backendNodeSchema = z.object({
 
 type BackendNode = z.infer<typeof backendNodeSchema>;
 
+const backendEdgeSchema = z.object({
+  source_id: z.string(),
+  target_id: z.string(),
+  relationship: z.string().optional(),
+  weight: z.number().optional(),
+});
+
 // ─── Prop schema — flat union of all backend event shapes ─────
 
 export const propSchema = z.object({
   event: z.string().default(""),
   node: backendNodeSchema.optional(),
   nodes: z.array(backendNodeSchema).optional(),
+  edges: z.array(backendEdgeSchema).optional(),
   nodeId: z.string().optional(),
   confidence: z.number().optional(),
   graphCount: z.number().optional(),
@@ -39,20 +54,24 @@ export const propSchema = z.object({
   readOnly: z.boolean().optional(),
 });
 
-type MemoryPanelProps = z.infer<typeof propSchema>;
+type ContextGraphWidgetProps = z.infer<typeof propSchema>;
+
+type WidgetState = { activeNodeIds: string[] };
 
 export const widgetMetadata: WidgetMetadata = {
-  description: "Live context graph — memories visualized as nodes across ChatGPT, Claude, Gemini",
+  description: "Interactive SVG knowledge graph showing user context as nodes and edges",
   props: propSchema,
   exposeAsTool: false,
   metadata: {
     prefersBorder: false,
-    invoking: "Updating memory graph...",
-    invoked: "Memory graph updated",
+    invoking: "Loading context graph...",
+    invoked: "Context graph loaded",
   },
 };
 
-// ─── Type mapping helpers ─────────────────────────────────────
+const noop = () => {};
+
+// ─── Type mapping helpers (from memory-panel) ─────────────────
 
 function mapNodeType(type: string): ContextGraphNode["category"] {
   switch (type) {
@@ -114,9 +133,19 @@ function backendNodesToGraph(backendNodes: BackendNode[]): ContextGraphNode[] {
   return repositionNodes(backendNodes.map(toGraphNode));
 }
 
-// ─── Edge builder ─────────────────────────────────────────────
+// ─── Edge helpers ─────────────────────────────────────────────
 
-function buildEdges(nodes: ContextGraphNode[]): ContextGraphEdge[] {
+function backendEdgesToGraph(
+  backendEdges: Array<{ source_id: string; target_id: string }> | undefined,
+  nodeIds: Set<string>
+): ContextGraphEdge[] {
+  if (!backendEdges?.length) return [];
+  return backendEdges
+    .filter((e) => nodeIds.has(e.source_id) && nodeIds.has(e.target_id))
+    .map((e) => ({ from: e.source_id, to: e.target_id }));
+}
+
+function buildEdgesFallback(nodes: ContextGraphNode[]): ContextGraphEdge[] {
   if (nodes.length < 2) return [];
   const edges: ContextGraphEdge[] = [];
   const byCategory: Record<string, ContextGraphNode[]> = {};
@@ -126,7 +155,6 @@ function buildEdges(nodes: ContextGraphNode[]): ContextGraphEdge[] {
     byCategory[node.category].push(node);
   }
 
-  // Sequential edges within same category
   for (const cat in byCategory) {
     const catNodes = byCategory[cat];
     for (let i = 0; i < catNodes.length - 1; i++) {
@@ -134,7 +162,6 @@ function buildEdges(nodes: ContextGraphNode[]): ContextGraphEdge[] {
     }
   }
 
-  // Cross-category: connect first node of each adjacent category
   const categories = Object.keys(byCategory);
   for (let i = 0; i < categories.length - 1; i++) {
     edges.push({
@@ -146,14 +173,33 @@ function buildEdges(nodes: ContextGraphNode[]): ContextGraphEdge[] {
   return edges;
 }
 
-// ─── Sub-components ───────────────────────────────────────────
+/* ── Display mode button ────────────────────────────── */
 
-const Header: React.FC<{ confidencePercent: number; graphName?: string }> = ({
-  confidencePercent,
-  graphName,
-}) => {
-  const circumference = 2 * Math.PI * 14;
-  const dashOffset = circumference - (confidencePercent / 100) * circumference;
+const displayModeButtonStyle: React.CSSProperties = {
+  width: "20px",
+  height: "20px",
+  border: "1px solid #1e1e2e",
+  borderRadius: "4px",
+  background: "transparent",
+  color: "#6b6b7b",
+  fontSize: "12px",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+  lineHeight: 1,
+};
+
+/* ── Header ──────────────────────────────────────────── */
+
+const Header: React.FC<{
+  confidencePercent: number;
+  graphName?: string;
+  displayMode?: string;
+  onRequestDisplayMode: (mode: "pip" | "fullscreen" | "inline") => void;
+}> = ({ confidencePercent, graphName, displayMode, onRequestDisplayMode }) => {
+  const isExpanded = displayMode === "pip" || displayMode === "fullscreen";
 
   return (
     <div
@@ -162,32 +208,39 @@ const Header: React.FC<{ confidencePercent: number; graphName?: string }> = ({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        borderBottom: "1px solid #1e1e2e",
+        borderBottom: "1px solid #1f2430",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <div
           style={{
-            width: "28px",
-            height: "28px",
-            borderRadius: "7px",
-            background: "linear-gradient(135deg, #7c6aff, #ec4899)",
+            width: "26px",
+            height: "26px",
+            borderRadius: "6px",
+            background: "rgba(91, 108, 255, 0.14)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <span style={{ fontWeight: 800, fontSize: "14px", color: "#ffffff", lineHeight: 1 }}>
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: "13px",
+              color: "#5b6cff",
+              lineHeight: 1,
+            }}
+          >
             S
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span
             style={{
-              fontSize: "15px",
-              fontWeight: 700,
-              color: "#e0e0e0",
-              letterSpacing: "-0.3px",
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "#e6eaf2",
+              letterSpacing: "-0.2px",
               lineHeight: 1.2,
             }}
           >
@@ -196,9 +249,8 @@ const Header: React.FC<{ confidencePercent: number; graphName?: string }> = ({
           <span
             style={{
               fontSize: "10px",
-              color: "#555555",
-              letterSpacing: "0.5px",
-              textTransform: "uppercase",
+              color: "#6b7280",
+              letterSpacing: "0.3px",
               marginTop: "1px",
               lineHeight: 1.2,
             }}
@@ -207,50 +259,72 @@ const Header: React.FC<{ confidencePercent: number; graphName?: string }> = ({
           </span>
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <span
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        {/* Display mode buttons */}
+        {isExpanded ? (
+          <button
+            onClick={() => onRequestDisplayMode("inline")}
+            style={displayModeButtonStyle}
+            title="Exit"
+          >
+            ✕
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => onRequestDisplayMode("pip")}
+              style={displayModeButtonStyle}
+              title="Picture-in-picture"
+            >
+              ⊡
+            </button>
+            <button
+              onClick={() => onRequestDisplayMode("fullscreen")}
+              style={displayModeButtonStyle}
+              title="Fullscreen"
+            >
+              ⛶
+            </button>
+          </>
+        )}
+        {/* CTX meter */}
+        <div
           style={{
-            fontSize: "9px",
-            color: "#555555",
-            letterSpacing: "1px",
-            textTransform: "uppercase",
-            marginRight: "6px",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            border: "1px solid #1f2430",
+            borderRadius: "6px",
+            padding: "4px 10px",
           }}
         >
-          CTX
-        </span>
-        <svg width="36" height="36" viewBox="0 0 36 36">
-          <circle cx="18" cy="18" r="14" stroke="#1e1e2e" strokeWidth="3" fill="none" />
-          <circle
-            cx="18"
-            cy="18"
-            r="14"
-            stroke="#7c6aff"
-            strokeWidth="3"
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            strokeLinecap="round"
+          <span
             style={{
-              transform: "rotate(-90deg)",
-              transformOrigin: "50% 50%",
-              transition: "stroke-dashoffset 0.4s ease",
+              fontSize: "10px",
+              color: "#6b7280",
+              letterSpacing: "0.5px",
+              textTransform: "uppercase",
             }}
-          />
-          <text
-            x="18"
-            y="18"
-            textAnchor="middle"
-            dominantBaseline="central"
-            style={{ fontSize: "9px", fill: "#e0e0e0", fontWeight: 600 }}
+          >
+            CTX
+          </span>
+          <span
+            style={{
+              fontSize: "11px",
+              color: "#5b6cff",
+              fontWeight: 600,
+              fontVariantNumeric: "tabular-nums",
+            }}
           >
             {confidencePercent}%
-          </text>
-        </svg>
+          </span>
+        </div>
       </div>
     </div>
   );
 };
+
+/* ── Footer ──────────────────────────────────────────── */
 
 const PLATFORMS = [
   { name: "ChatGPT", key: "chatgpt" as const, color: "#10a37f" },
@@ -262,40 +336,44 @@ const PLATFORMS = [
 const Footer: React.FC<{
   nodeCount: number;
   edgeCount: number;
+  activeCount: number;
   activeSources: Set<string>;
   readOnly: boolean;
-}> = ({ nodeCount, edgeCount, activeSources, readOnly }) => (
+}> = ({ nodeCount, edgeCount, activeCount, activeSources, readOnly }) => (
   <div
     style={{
       padding: "10px 16px",
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      borderTop: "1px solid #1e1e2e",
+      borderTop: "1px solid #1f2430",
     }}
   >
-    <span style={{ fontSize: "10px", color: "#444444", letterSpacing: "0.3px" }}>
+    <span style={{ fontSize: "11px", color: "#6b7280", letterSpacing: "0.2px" }}>
       {nodeCount} nodes
-      <span style={{ margin: "0 3px" }}>&middot;</span>
+      <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
       {edgeCount} edges
+      <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
+      {activeCount} active
       {readOnly && (
         <>
-          <span style={{ margin: "0 3px" }}>&middot;</span>
+          <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
           <span style={{ color: "#f59e0b" }}>read-only</span>
         </>
       )}
     </span>
-    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
       {PLATFORMS.map((p) => (
         <div
           key={p.key}
           title={p.name}
           style={{
-            width: "8px",
-            height: "8px",
+            width: "6px",
+            height: "6px",
             borderRadius: "50%",
             background: activeSources.has(p.key) ? p.color : "#1e1e2e",
             border: `1px solid ${p.color}4d`,
+            opacity: activeSources.has(p.key) ? 1 : 0.5,
             transition: "background 0.3s ease",
           }}
         />
@@ -303,6 +381,8 @@ const Footer: React.FC<{
     </div>
   </div>
 );
+
+/* ── Empty state ─────────────────────────────────────── */
 
 const EmptyState: React.FC = () => (
   <div
@@ -316,14 +396,16 @@ const EmptyState: React.FC = () => (
     }}
   >
     <span style={{ fontSize: "28px", color: "#2a2a3a" }}>◎</span>
-    <span style={{ fontSize: "12px", color: "#444444", fontFamily: "monospace" }}>
+    <span style={{ fontSize: "12px", color: "#6b7280", fontFamily: "monospace" }}>
       No memories yet
     </span>
-    <span style={{ fontSize: "10px", color: "#333333", fontFamily: "monospace" }}>
+    <span style={{ fontSize: "10px", color: "#555555", fontFamily: "monospace" }}>
       Say something and I'll remember it
     </span>
   </div>
 );
+
+/* ── Toast ────────────────────────────────────────────── */
 
 const Toast: React.FC<{ message: string }> = ({ message }) => (
   <div
@@ -347,6 +429,8 @@ const Toast: React.FC<{ message: string }> = ({ message }) => (
     {message}
   </div>
 );
+
+/* ── Share overlay ────────────────────────────────────── */
 
 const ShareOverlay: React.FC<{ url: string; onDismiss: () => void }> = ({ url, onDismiss }) => (
   <div
@@ -424,15 +508,43 @@ const ShareOverlay: React.FC<{ url: string; onDismiss: () => void }> = ({ url, o
   </div>
 );
 
-// ─── Main Widget ──────────────────────────────────────────────
+/* ── Pulsing border keyframes (injected once) ────────── */
 
-const MemoryPanel: React.FC = () => {
-  const { props, isPending } = useWidget<MemoryPanelProps>();
+const PULSE_STYLE_ID = "ctx-graph-pulse-style";
+
+function ensurePulseStyle() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(PULSE_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = PULSE_STYLE_ID;
+  style.textContent = `
+    @keyframes ctx-graph-border-pulse {
+      0%, 100% { border-color: #7c6aff; }
+      50% { border-color: transparent; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+/* ── Widget ──────────────────────────────────────────── */
+
+const ContextGraphWidget: React.FC = () => {
+  const {
+    props,
+    isPending,
+    sendFollowUpMessage,
+    state,
+    setState,
+    requestDisplayMode,
+    displayMode,
+  } = useWidget<ContextGraphWidgetProps, WidgetState>();
 
   const [nodes, setNodes] = useState<ContextGraphNode[]>([]);
   const [edges, setEdges] = useState<ContextGraphEdge[]>([]);
   const [confidence, setConfidence] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [showRouting, setShowRouting] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [graphName, setGraphName] = useState<string | undefined>();
   const [readOnly, setReadOnly] = useState(false);
@@ -440,13 +552,28 @@ const MemoryPanel: React.FC = () => {
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /* ── MCP tool hooks (correct backend tool names) ─── */
+
+  const { callTool: getContext, isPending: isSearching } =
+    useCallTool("get-context");
+
+  const { callTool: deleteMemory } = useCallTool("delete-memory");
+
+  const { callTool: shareGraph } = useCallTool("share-graph");
+
+  /* ── Inject pulse animation CSS ────────────────────── */
+  ensurePulseStyle();
+
+  /* ── Toast helper ──────────────────────────────────── */
+
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
-  // ── Handle backend events ──────────────────────────────────
+  /* ── Handle backend events ─────────────────────────── */
+
   useEffect(() => {
     if (!props?.event) return;
 
@@ -458,7 +585,9 @@ const MemoryPanel: React.FC = () => {
           if (alreadyExists) return prev;
           const updated = [...prev, toGraphNode(props.node!)];
           const repositioned = repositionNodes(updated);
-          setEdges(buildEdges(repositioned));
+          const nodeIds = new Set(repositioned.map((n) => n.id));
+          const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+          setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(repositioned));
           return repositioned;
         });
         break;
@@ -468,7 +597,9 @@ const MemoryPanel: React.FC = () => {
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
-        setEdges(buildEdges(graphNodes));
+        const nodeIds = new Set(graphNodes.map((n) => n.id));
+        const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+        setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
         setConfidence(props.confidence ?? 0);
         setSelectedNodeId(null);
         break;
@@ -484,7 +615,9 @@ const MemoryPanel: React.FC = () => {
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
-        setEdges(buildEdges(graphNodes));
+        const nodeIds = new Set(graphNodes.map((n) => n.id));
+        const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+        setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
         setSelectedNodeId(null);
         break;
       }
@@ -493,7 +626,7 @@ const MemoryPanel: React.FC = () => {
         if (!props.nodeId) return;
         setNodes((prev) => {
           const updated = repositionNodes(prev.filter((n) => n.id !== props.nodeId));
-          setEdges(buildEdges(updated));
+          setEdges(buildEdgesFallback(updated));
           return updated;
         });
         setSelectedNodeId((sel) => (sel === props.nodeId ? null : sel));
@@ -510,64 +643,117 @@ const MemoryPanel: React.FC = () => {
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
-        setEdges(buildEdges(graphNodes));
+        const nodeIds = new Set(graphNodes.map((n) => n.id));
+        const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+        setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
         setSelectedNodeId(null);
         setReadOnly(props.readOnly ?? false);
         setGraphName(props.graphName);
         break;
       }
     }
-  }, [props]);
+  }, [props, showToast]);
 
-  // ── Tool wiring ────────────────────────────────────────────
-  const { callTool: deleteTool } = useCallTool("delete-memory");
-  const { callTool: shareTool } = useCallTool("share-graph");
+  /* ── Derived data ──────────────────────────────────── */
 
-  const handleDelete = useCallback(() => {
-    if (!selectedNodeId || readOnly) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (deleteTool as any)({ node_id: selectedNodeId });
-  }, [selectedNodeId, readOnly, deleteTool]);
+  const relevantNodeIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    return new Set(
+      nodes
+        .filter((n) => {
+          const label = (n.label || "").toLowerCase();
+          const category = (n.category || "").toLowerCase();
+          const source = (n.source || "").toLowerCase();
+          return label.includes(q) || category.includes(q) || source.includes(q);
+        })
+        .map((n) => n.id)
+    );
+  }, [query, nodes]);
 
-  const handleShare = useCallback(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (shareTool as any)({ scope: "global" });
-  }, [shareTool]);
+  const selectedNode = useMemo(
+    () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null),
+    [selectedNodeId, nodes]
+  );
+
+  const connectionCount = useMemo(() => {
+    if (!selectedNodeId) return 0;
+    return edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length;
+  }, [selectedNodeId, edges]);
+
+  const relevantCount = relevantNodeIds.size;
+  const activeRelevantCount =
+    selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
+  const confidencePercent =
+    nodes.length > 0
+      ? Math.round(confidence * 100) || (relevantCount > 0 ? Math.round((activeRelevantCount / relevantCount) * 100) : 0)
+      : 0;
+
+  const activeSources = useMemo(() => new Set(nodes.map((n) => n.source)), [nodes]);
+
+  /* ── Handlers ──────────────────────────────────────── */
 
   const handleNodeSelect = useCallback(
     (nodeId: string | null, _connectedIds: Set<string>) => {
       setSelectedNodeId(nodeId);
+      if (nodeId) {
+        const node = nodes.find((n) => n.id === nodeId);
+        if (node) {
+          (getContext as (args: Record<string, unknown>) => void)({
+            topic: node.label,
+          });
+        }
+        setState({
+          activeNodeIds: [...(state?.activeNodeIds ?? []), nodeId],
+        });
+      }
     },
-    []
+    [nodes, getContext, state, setState]
   );
 
-  // ── Derived values ─────────────────────────────────────────
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
+  const handleRoute = useCallback(() => {
+    if (selectedNode) {
+      setShowRouting(true);
+    }
+  }, [selectedNode]);
 
-  const connectionCount = selectedNodeId
-    ? edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length
-    : 0;
+  const handleDelete = useCallback(() => {
+    if (selectedNode && !readOnly) {
+      (deleteMemory as (args: Record<string, unknown>) => void)({
+        node_id: selectedNode.id,
+      });
+    }
+  }, [selectedNode, readOnly, deleteMemory]);
 
-  const confidencePercent = Math.round(confidence * 100);
+  const handleShare = useCallback(() => {
+    (shareGraph as (args: Record<string, unknown>) => void)({ scope: "global" });
+  }, [shareGraph]);
 
-  const activeSources = new Set(nodes.map((n) => n.source));
+  const handleRoutingAccept = useCallback(() => {
+    setShowRouting(false);
+    sendFollowUpMessage(
+      `The user accepted a routing suggestion. Switch context to Claude 3.7 Sonnet for this task — it handles SQL migrations with higher accuracy for their established patterns.`
+    );
+  }, [sendFollowUpMessage]);
 
-  // ── Loading state ──────────────────────────────────────────
+  /* ── Render ────────────────────────────────────────── */
+
   if (isPending && nodes.length === 0) {
     return (
       <McpUseProvider>
         <div
           style={{
-            background: "#0a0a0f",
-            borderRadius: "12px",
-            border: "1px solid #1e1e2e",
+            background: "#0f1115",
+            borderRadius: "8px",
+            border: "1px solid #1f2430",
+            padding: "24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             minHeight: "200px",
           }}
         >
-          <span style={{ color: "#6b6b7b", fontFamily: "monospace", fontSize: "12px" }}>
+          <span style={{ color: "#6b7280", fontSize: "12px" }}>
             Loading context graph...
           </span>
         </div>
@@ -575,38 +761,59 @@ const MemoryPanel: React.FC = () => {
     );
   }
 
-  // ── Full render ────────────────────────────────────────────
   return (
     <McpUseProvider>
       <div
         style={{
-          background: "#0a0a0f",
-          borderRadius: "12px",
-          border: "1px solid #1e1e2e",
+          background: "#0f1115",
+          borderRadius: "8px",
+          border: "1px solid #1f2430",
           overflow: "hidden",
           position: "relative",
-          fontFamily: "JetBrains Mono, SF Mono, Fira Code, monospace",
         }}
       >
-        <Header confidencePercent={confidencePercent} graphName={graphName} />
-
-        {nodes.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <ContextGraph
-            nodes={nodes}
-            edges={edges}
-            onNodeSelect={handleNodeSelect}
-          />
-        )}
-
+        <Header
+          confidencePercent={confidencePercent}
+          graphName={graphName}
+          displayMode={displayMode}
+          onRequestDisplayMode={requestDisplayMode}
+        />
+        <QueryBar
+          query={query}
+          onChangeQuery={setQuery}
+          relevantCount={relevantCount}
+          activeRelevantCount={activeRelevantCount}
+          onClear={() => setQuery("")}
+        />
+        {/* Graph area — pulsing border when searching */}
+        <div
+          style={
+            isSearching
+              ? {
+                  border: "1px solid #7c6aff",
+                  animation: "ctx-graph-border-pulse 1.5s ease-in-out infinite",
+                }
+              : undefined
+          }
+        >
+          {nodes.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <ContextGraph
+              nodes={nodes}
+              edges={edges}
+              onNodeSelect={handleNodeSelect}
+            />
+          )}
+        </div>
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
             connectionCount={connectionCount}
-            onRoute={() => showToast("Routing suggestion: use get-context tool")}
+            onRoute={handleRoute}
             onEdit={() => showToast("Update via chat: 'edit memory…'")}
             onDelete={handleDelete}
+            isRouting={false}
           />
         )}
 
@@ -614,7 +821,7 @@ const MemoryPanel: React.FC = () => {
           <div
             style={{
               padding: "8px 16px",
-              borderTop: "1px solid #1e1e2e",
+              borderTop: "1px solid #1f2430",
               display: "flex",
               justifyContent: "flex-end",
             }}
@@ -640,6 +847,7 @@ const MemoryPanel: React.FC = () => {
         <Footer
           nodeCount={nodes.length}
           edgeCount={edges.length}
+          activeCount={state?.activeNodeIds?.length ?? (selectedNodeId ? 1 : 0)}
           activeSources={activeSources}
           readOnly={readOnly}
         />
@@ -648,9 +856,23 @@ const MemoryPanel: React.FC = () => {
         {shareUrl && (
           <ShareOverlay url={shareUrl} onDismiss={() => setShareUrl(null)} />
         )}
+
+        {showRouting && (
+          <RoutingCard
+            recommended={{
+              platform: "Claude 3.7 Sonnet",
+              color: "#d97706",
+              reason:
+                "handles SQL migrations with 40% higher accuracy for your established patterns.",
+              nodeCount: nodes.filter((n) => n.category === "code").length || 3,
+            }}
+            onAccept={handleRoutingAccept}
+            onDismiss={() => setShowRouting(false)}
+          />
+        )}
       </div>
     </McpUseProvider>
   );
 };
 
-export default MemoryPanel;
+export default ContextGraphWidget;

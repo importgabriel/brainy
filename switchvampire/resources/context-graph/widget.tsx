@@ -4,7 +4,7 @@ import {
   useCallTool,
   type WidgetMetadata,
 } from "mcp-use/react";
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { z } from "zod";
 import ContextGraph from "../components/ContextGraph";
 import NodeDetail from "../components/NodeDetail";
@@ -12,24 +12,46 @@ import QueryBar from "../components/QueryBar";
 import RoutingCard from "../components/RoutingCard";
 import type { ContextGraphNode, ContextGraphEdge } from "../components/ContextGraph";
 
-const nodeSchema = z.object({
+// ─── Backend node schema (matches ContextNode from store.ts) ──
+
+const backendNodeSchema = z.object({
   id: z.string(),
-  label: z.string(),
-  category: z.enum(["fact", "preference", "project", "code", "decision"]),
-  source: z.enum(["chatgpt", "claude", "gemini", "perplexity"]),
-  x: z.number(),
-  y: z.number(),
+  user_id: z.string(),
+  type: z.string(),
+  content: z.string(),
   confidence: z.number(),
+  source_platform: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  is_active: z.boolean().optional(),
+  created_at: z.string().optional(),
+  last_accessed: z.string().optional(),
 });
 
-const edgeSchema = z.object({
-  from: z.string(),
-  to: z.string(),
+type BackendNode = z.infer<typeof backendNodeSchema>;
+
+const backendEdgeSchema = z.object({
+  source_id: z.string(),
+  target_id: z.string(),
+  relationship: z.string().optional(),
+  weight: z.number().optional(),
 });
+
+// ─── Prop schema — flat union of all backend event shapes ─────
 
 export const propSchema = z.object({
-  nodes: z.array(nodeSchema),
-  edges: z.array(edgeSchema),
+  event: z.string().default(""),
+  node: backendNodeSchema.optional(),
+  nodes: z.array(backendNodeSchema).optional(),
+  edges: z.array(backendEdgeSchema).optional(),
+  nodeId: z.string().optional(),
+  confidence: z.number().optional(),
+  graphCount: z.number().optional(),
+  graphId: z.string().optional(),
+  shareToken: z.string().optional(),
+  shareUrl: z.string().optional(),
+  graphName: z.string().optional(),
+  permission: z.string().optional(),
+  readOnly: z.boolean().optional(),
 });
 
 type ContextGraphWidgetProps = z.infer<typeof propSchema>;
@@ -47,7 +69,107 @@ export const widgetMetadata: WidgetMetadata = {
   },
 };
 
-const noop = () => {};
+// ─── Type mapping helpers ─────────────────────────────────────
+
+function mapNodeType(type: string): ContextGraphNode["category"] {
+  switch (type) {
+    case "fact":                return "fact";
+    case "preference":          return "preference";
+    case "project":             return "project";
+    case "decision":            return "decision";
+    case "code_pattern":        return "code";
+    case "person":              return "fact";
+    case "concept":             return "fact";
+    case "communication_style": return "preference";
+    default:                    return "fact";
+  }
+}
+
+function mapPlatform(platform: string | null): ContextGraphNode["source"] {
+  if (!platform) return "chatgpt";
+  const p = platform.toLowerCase();
+  if (p.includes("chatgpt") || p.includes("openai")) return "chatgpt";
+  if (p.includes("claude") || p.includes("anthropic")) return "claude";
+  if (p.includes("gemini") || p.includes("google")) return "gemini";
+  if (p.includes("perplexity")) return "perplexity";
+  return "chatgpt";
+}
+
+// ─── Layout helpers ───────────────────────────────────────────
+
+function placeNode(index: number, total: number): { x: number; y: number } {
+  const cx = 350;
+  const cy = 230;
+  const r = Math.max(80, Math.min(160, 40 + total * 12));
+  const angle = total === 1
+    ? -Math.PI / 2
+    : (2 * Math.PI * index) / total - Math.PI / 2;
+  return {
+    x: Math.round(cx + r * Math.cos(angle)),
+    y: Math.round(cy + r * Math.sin(angle)),
+  };
+}
+
+function repositionNodes(nodes: ContextGraphNode[]): ContextGraphNode[] {
+  return nodes.map((n, i) => ({ ...n, ...placeNode(i, nodes.length) }));
+}
+
+function toGraphNode(n: BackendNode): ContextGraphNode {
+  const label = n.content.length > 22 ? n.content.slice(0, 22) + "…" : n.content;
+  return {
+    id: n.id,
+    label,
+    category: mapNodeType(n.type),
+    source: mapPlatform(n.source_platform),
+    x: 350,
+    y: 230,
+    confidence: n.confidence,
+  };
+}
+
+function backendNodesToGraph(backendNodes: BackendNode[]): ContextGraphNode[] {
+  return repositionNodes(backendNodes.map(toGraphNode));
+}
+
+// ─── Edge helpers ─────────────────────────────────────────────
+
+function backendEdgesToGraph(
+  backendEdges: Array<{ source_id: string; target_id: string }> | undefined,
+  nodeIds: Set<string>
+): ContextGraphEdge[] {
+  if (!backendEdges?.length) return [];
+  return backendEdges
+    .filter((e) => nodeIds.has(e.source_id) && nodeIds.has(e.target_id))
+    .map((e) => ({ from: e.source_id, to: e.target_id }));
+}
+
+function buildEdgesFallback(nodes: ContextGraphNode[]): ContextGraphEdge[] {
+  if (nodes.length < 2) return [];
+  const edges: ContextGraphEdge[] = [];
+  const byCategory: Record<string, ContextGraphNode[]> = {};
+
+  for (const node of nodes) {
+    if (!byCategory[node.category]) byCategory[node.category] = [];
+    byCategory[node.category].push(node);
+  }
+
+  for (const cat in byCategory) {
+    const catNodes = byCategory[cat];
+    for (let i = 0; i < catNodes.length - 1; i++) {
+      edges.push({ from: catNodes[i].id, to: catNodes[i + 1].id });
+    }
+  }
+
+  const categories = Object.keys(byCategory);
+  for (let i = 0; i < categories.length - 1; i++) {
+    edges.push({
+      from: byCategory[categories[i]][0].id,
+      to: byCategory[categories[i + 1]][0].id,
+    });
+  }
+
+  return edges;
+}
 
 /* ── Display mode button ────────────────────────────── */
 
@@ -71,9 +193,10 @@ const displayModeButtonStyle: React.CSSProperties = {
 
 const Header: React.FC<{
   confidencePercent: number;
+  graphName?: string;
   displayMode?: string;
   onRequestDisplayMode: (mode: "pip" | "fullscreen" | "inline") => void;
-}> = ({ confidencePercent, displayMode, onRequestDisplayMode }) => {
+}> = ({ confidencePercent, graphName, displayMode, onRequestDisplayMode }) => {
   const isExpanded = displayMode === "pip" || displayMode === "fullscreen";
 
   return (
@@ -130,7 +253,7 @@ const Header: React.FC<{
               lineHeight: 1.2,
             }}
           >
-            Universal Context Graph
+            {graphName ?? "Universal Context Graph"}
           </span>
         </div>
       </div>
@@ -202,17 +325,19 @@ const Header: React.FC<{
 /* ── Footer ──────────────────────────────────────────── */
 
 const PLATFORMS = [
-  { name: "ChatGPT", color: "#10a37f" },
-  { name: "Claude", color: "#d97706" },
-  { name: "Gemini", color: "#4285f4" },
-  { name: "Perplexity", color: "#8b5cf6" },
-] as const;
+  { name: "ChatGPT", key: "chatgpt" as const, color: "#10a37f" },
+  { name: "Claude",  key: "claude"  as const, color: "#d97706" },
+  { name: "Gemini",  key: "gemini"  as const, color: "#4285f4" },
+  { name: "Perplexity", key: "perplexity" as const, color: "#8b5cf6" },
+];
 
 const Footer: React.FC<{
   nodeCount: number;
   edgeCount: number;
   activeCount: number;
-}> = ({ nodeCount, edgeCount, activeCount }) => (
+  activeSources: Set<string>;
+  readOnly: boolean;
+}> = ({ nodeCount, edgeCount, activeCount, activeSources, readOnly }) => (
   <div
     style={{
       padding: "10px 16px",
@@ -228,21 +353,155 @@ const Footer: React.FC<{
       {edgeCount} edges
       <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
       {activeCount} active
+      {readOnly && (
+        <>
+          <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
+          <span style={{ color: "#f59e0b" }}>read-only</span>
+        </>
+      )}
     </span>
     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
       {PLATFORMS.map((p) => (
         <div
-          key={p.name}
+          key={p.key}
           title={p.name}
           style={{
             width: "6px",
             height: "6px",
             borderRadius: "50%",
-            background: p.color,
-            opacity: 0.5,
+            background: activeSources.has(p.key) ? p.color : "#1e1e2e",
+            border: `1px solid ${p.color}4d`,
+            opacity: activeSources.has(p.key) ? 1 : 0.5,
+            transition: "background 0.3s ease",
           }}
         />
       ))}
+    </div>
+  </div>
+);
+
+/* ── Empty state ─────────────────────────────────────── */
+
+const EmptyState: React.FC = () => (
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "200px",
+      gap: "10px",
+    }}
+  >
+    <span style={{ fontSize: "28px", color: "#2a2a3a" }}>◎</span>
+    <span style={{ fontSize: "12px", color: "#6b7280", fontFamily: "monospace" }}>
+      No memories yet
+    </span>
+    <span style={{ fontSize: "10px", color: "#555555", fontFamily: "monospace" }}>
+      Say something and I'll remember it
+    </span>
+  </div>
+);
+
+/* ── Toast ────────────────────────────────────────────── */
+
+const Toast: React.FC<{ message: string }> = ({ message }) => (
+  <div
+    style={{
+      position: "absolute",
+      bottom: "52px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "#1e1e2e",
+      border: "1px solid #2a2a3a",
+      borderRadius: "20px",
+      padding: "6px 14px",
+      fontSize: "11px",
+      color: "#e2e2e8",
+      fontFamily: "monospace",
+      whiteSpace: "nowrap",
+      pointerEvents: "none",
+      zIndex: 10,
+    }}
+  >
+    {message}
+  </div>
+);
+
+/* ── Share overlay ────────────────────────────────────── */
+
+const ShareOverlay: React.FC<{ url: string; onDismiss: () => void }> = ({ url, onDismiss }) => (
+  <div
+    style={{
+      position: "absolute",
+      inset: 0,
+      background: "rgba(10,10,15,0.85)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 20,
+    }}
+    onClick={onDismiss}
+  >
+    <div
+      style={{
+        background: "#12121a",
+        border: "1px solid #1e1e2e",
+        borderRadius: "12px",
+        padding: "24px",
+        maxWidth: "320px",
+        width: "90%",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div style={{ fontSize: "13px", fontWeight: 700, color: "#e2e2e8", marginBottom: "8px" }}>
+        Share Context Graph
+      </div>
+      <div
+        style={{
+          fontSize: "10px",
+          color: "#555555",
+          fontFamily: "monospace",
+          wordBreak: "break-all",
+          background: "#0a0a0f",
+          padding: "8px 10px",
+          borderRadius: "6px",
+          marginBottom: "12px",
+          border: "1px solid #1e1e2e",
+        }}
+      >
+        {url}
+      </div>
+      <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+        <button
+          onClick={() => navigator.clipboard.writeText(url)}
+          style={{
+            background: "#7c6aff20",
+            border: "1px solid #7c6aff40",
+            borderRadius: "6px",
+            padding: "6px 14px",
+            fontSize: "11px",
+            color: "#7c6aff",
+            cursor: "pointer",
+          }}
+        >
+          Copy Link
+        </button>
+        <button
+          onClick={onDismiss}
+          style={{
+            background: "none",
+            border: "1px solid #2a2a3a",
+            borderRadius: "6px",
+            padding: "6px 14px",
+            fontSize: "11px",
+            color: "#555555",
+            cursor: "pointer",
+          }}
+        >
+          Close
+        </button>
+      </div>
     </div>
   </div>
 );
@@ -278,31 +537,122 @@ const ContextGraphWidget: React.FC = () => {
     displayMode,
   } = useWidget<ContextGraphWidgetProps, WidgetState>();
 
+  const [nodes, setNodes] = useState<ContextGraphNode[]>([]);
+  const [edges, setEdges] = useState<ContextGraphEdge[]>([]);
+  const [confidence, setConfidence] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showRouting, setShowRouting] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [graphName, setGraphName] = useState<string | undefined>();
+  const [readOnly, setReadOnly] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  /* ── MCP tool hooks ────────────────────────────────── */
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { callTool: searchMemories, isPending: isSearching } =
-    useCallTool("search_memories");
+  /* ── MCP tool hooks (correct backend tool names) ─── */
 
-  const { callTool: getRouting, isPending: isRouting } =
-    useCallTool("get_routing_suggestion");
+  const { callTool: getContext, isPending: isSearching } =
+    useCallTool("get-context");
 
-  const { callTool: deleteMemory } = useCallTool("delete_memory");
+  const { callTool: deleteMemory } = useCallTool("delete-memory");
 
-  const { callTool: logFeedback } = useCallTool("log_feedback");
-
-  const { callTool: saveMemory } = useCallTool("save_memory");
+  const { callTool: shareGraph } = useCallTool("share-graph");
 
   /* ── Inject pulse animation CSS ────────────────────── */
   ensurePulseStyle();
 
-  /* ── Derived data ──────────────────────────────────── */
+  /* ── Toast helper ──────────────────────────────────── */
 
-  const nodes = isPending ? [] : (props.nodes as ContextGraphNode[]);
-  const edges = isPending ? [] : (props.edges as ContextGraphEdge[]);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  }, []);
+
+  /* ── Handle backend events ─────────────────────────── */
+
+  useEffect(() => {
+    if (!props?.event) return;
+
+    switch (props.event) {
+      case "node_saved": {
+        if (!props.node) return;
+        setNodes((prev) => {
+          const alreadyExists = prev.some((n) => n.id === props.node!.id);
+          if (alreadyExists) return prev;
+          const updated = [...prev, toGraphNode(props.node!)];
+          const repositioned = repositionNodes(updated);
+          const nodeIds = new Set(repositioned.map((n) => n.id));
+          const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+          setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(repositioned));
+          return repositioned;
+        });
+        break;
+      }
+
+      case "context_loaded": {
+        if (!props.nodes) return;
+        const graphNodes = backendNodesToGraph(props.nodes);
+        setNodes(graphNodes);
+        const nodeIds = new Set(graphNodes.map((n) => n.id));
+        const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+        setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
+        setConfidence(props.confidence ?? 0);
+        setSelectedNodeId(null);
+        break;
+      }
+
+      case "context_empty": {
+        setConfidence(0);
+        showToast("No relevant memories found for this topic");
+        break;
+      }
+
+      case "list_loaded": {
+        if (!props.nodes) return;
+        const graphNodes = backendNodesToGraph(props.nodes);
+        setNodes(graphNodes);
+        const nodeIds = new Set(graphNodes.map((n) => n.id));
+        const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+        setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
+        setSelectedNodeId(null);
+        break;
+      }
+
+      case "node_deleted": {
+        if (!props.nodeId) return;
+        setNodes((prev) => {
+          const updated = repositionNodes(prev.filter((n) => n.id !== props.nodeId));
+          setEdges(buildEdgesFallback(updated));
+          return updated;
+        });
+        setSelectedNodeId((sel) => (sel === props.nodeId ? null : sel));
+        showToast("Memory deleted");
+        break;
+      }
+
+      case "graph_shared": {
+        if (props.shareUrl) setShareUrl(props.shareUrl);
+        break;
+      }
+
+      case "shared_graph_loaded": {
+        if (!props.nodes) return;
+        const graphNodes = backendNodesToGraph(props.nodes);
+        setNodes(graphNodes);
+        const nodeIds = new Set(graphNodes.map((n) => n.id));
+        const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
+        setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
+        setSelectedNodeId(null);
+        setReadOnly(props.readOnly ?? false);
+        setGraphName(props.graphName);
+        break;
+      }
+    }
+  }, [props, showToast]);
+
+  /* ── Derived data ──────────────────────────────────── */
 
   const relevantNodeIds = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -333,9 +683,11 @@ const ContextGraphWidget: React.FC = () => {
   const activeRelevantCount =
     selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
   const confidencePercent =
-    relevantCount > 0
-      ? Math.round((activeRelevantCount / relevantCount) * 100)
+    nodes.length > 0
+      ? Math.round(confidence * 100) || (relevantCount > 0 ? Math.round((activeRelevantCount / relevantCount) * 100) : 0)
       : 0;
+
+  const activeSources = useMemo(() => new Set(nodes.map((n) => n.source)), [nodes]);
 
   /* ── Handlers ──────────────────────────────────────── */
 
@@ -343,11 +695,10 @@ const ContextGraphWidget: React.FC = () => {
     (nodeId: string | null, _connectedIds: Set<string>) => {
       setSelectedNodeId(nodeId);
       if (nodeId) {
-        const node = (props.nodes as ContextGraphNode[]).find((n) => n.id === nodeId);
+        const node = nodes.find((n) => n.id === nodeId);
         if (node) {
-          (searchMemories as (args: Record<string, unknown>) => void)({
-            query: node.label,
-            top_k: 5,
+          (getContext as (args: Record<string, unknown>) => void)({
+            topic: node.label,
           });
         }
         setState({
@@ -355,25 +706,26 @@ const ContextGraphWidget: React.FC = () => {
         });
       }
     },
-    [props.nodes, searchMemories, state, setState]
+    [nodes, getContext, state, setState]
   );
 
   const handleRoute = useCallback(() => {
     if (selectedNode) {
-      (getRouting as (args: Record<string, unknown>, opts?: Record<string, unknown>) => void)(
-        { prompt: selectedNode.label, task_type: selectedNode.category },
-        { onSuccess: () => setShowRouting(true) }
-      );
+      setShowRouting(true);
     }
-  }, [selectedNode, getRouting]);
+  }, [selectedNode]);
 
   const handleDelete = useCallback(() => {
-    if (selectedNode) {
+    if (selectedNode && !readOnly) {
       (deleteMemory as (args: Record<string, unknown>) => void)({
-        memory_id: selectedNode.id,
+        node_id: selectedNode.id,
       });
     }
-  }, [selectedNode, deleteMemory]);
+  }, [selectedNode, readOnly, deleteMemory]);
+
+  const handleShare = useCallback(() => {
+    (shareGraph as (args: Record<string, unknown>) => void)({ scope: "global" });
+  }, [shareGraph]);
 
   const handleRoutingAccept = useCallback(() => {
     setShowRouting(false);
@@ -384,12 +736,14 @@ const ContextGraphWidget: React.FC = () => {
 
   /* ── Render ────────────────────────────────────────── */
 
-  if (isPending) {
+  if (isPending && nodes.length === 0) {
     return (
       <McpUseProvider>
         <div
           style={{
             background: "#0f1115",
+            borderRadius: "8px",
+            border: "1px solid #1f2430",
             padding: "24px",
             display: "flex",
             alignItems: "center",
@@ -418,6 +772,7 @@ const ContextGraphWidget: React.FC = () => {
       >
         <Header
           confidencePercent={confidencePercent}
+          graphName={graphName}
           displayMode={displayMode}
           onRequestDisplayMode={requestDisplayMode}
         />
@@ -439,27 +794,67 @@ const ContextGraphWidget: React.FC = () => {
               : undefined
           }
         >
-          <ContextGraph
-            nodes={nodes}
-            edges={edges}
-            onNodeSelect={handleNodeSelect}
-          />
+          {nodes.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <ContextGraph
+              nodes={nodes}
+              edges={edges}
+              onNodeSelect={handleNodeSelect}
+            />
+          )}
         </div>
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
             connectionCount={connectionCount}
             onRoute={handleRoute}
-            onEdit={noop}
+            onEdit={() => showToast("Update via chat: 'edit memory…'")}
             onDelete={handleDelete}
-            isRouting={isRouting}
+            isRouting={false}
           />
         )}
+
+        {!readOnly && nodes.length > 0 && (
+          <div
+            style={{
+              padding: "8px 16px",
+              borderTop: "1px solid #1f2430",
+              display: "flex",
+              justifyContent: "flex-end",
+            }}
+          >
+            <button
+              onClick={handleShare}
+              style={{
+                background: "none",
+                border: "1px solid #7c6aff40",
+                borderRadius: "6px",
+                padding: "4px 12px",
+                fontSize: "10px",
+                color: "#7c6aff",
+                cursor: "pointer",
+                letterSpacing: "0.3px",
+              }}
+            >
+              Share Graph
+            </button>
+          </div>
+        )}
+
         <Footer
           nodeCount={nodes.length}
           edgeCount={edges.length}
           activeCount={state?.activeNodeIds?.length ?? (selectedNodeId ? 1 : 0)}
+          activeSources={activeSources}
+          readOnly={readOnly}
         />
+
+        {toast && <Toast message={toast} />}
+        {shareUrl && (
+          <ShareOverlay url={shareUrl} onDismiss={() => setShareUrl(null)} />
+        )}
+
         {showRouting && (
           <RoutingCard
             recommended={{

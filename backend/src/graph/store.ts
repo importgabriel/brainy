@@ -301,6 +301,28 @@ export async function loadSharedGraph(shareToken: string): Promise<{
   };
 }
 
+// ─── Fetch edges for a set of nodes ──────────────────────────
+
+export interface GraphEdge {
+  source_id: string;
+  target_id: string;
+  relationship: string;
+  weight: number;
+}
+
+export async function getEdgesForNodes(nodeIds: string[]): Promise<GraphEdge[]> {
+  if (!nodeIds.length) return [];
+
+  const { data, error } = await db
+    .from("context_edges")
+    .select("source_id, target_id, relationship, weight")
+    .in("source_id", nodeIds)
+    .in("target_id", nodeIds);
+
+  if (error) throw new Error(`getEdgesForNodes failed: ${error.message}`);
+  return (data ?? []) as GraphEdge[];
+}
+
 // ─── Deactivate (soft delete) a node ─────────────────────────
 
 export async function deleteNode(userId: string, nodeId: string): Promise<void> {

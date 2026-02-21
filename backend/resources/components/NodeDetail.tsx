@@ -22,6 +22,7 @@ export interface NodeDetailProps {
   onRoute: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  isRouting?: boolean;
 }
 
 const NodeDetail: React.FC<NodeDetailProps> = ({
@@ -30,6 +31,7 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
   onRoute,
   onEdit,
   onDelete,
+  isRouting = false,
 }) => {
   const catColor = CATEGORY_COLORS[node.category];
   const srcColor = SOURCE_COLORS[node.source];
@@ -38,8 +40,8 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
   return (
     <div
       style={{
-        padding: "14px 16px",
-        borderTop: "1px solid #1e1e2e",
+        padding: "12px 16px",
+        borderTop: "1px solid #1f2430",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -50,8 +52,8 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
       <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
         <div
           style={{
-            width: "10px",
-            height: "10px",
+            width: "8px",
+            height: "8px",
             borderRadius: "50%",
             background: catColor,
             border: `2px solid ${srcColor}`,
@@ -63,7 +65,7 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
             style={{
               fontSize: "13px",
               fontWeight: 600,
-              color: "#e0e0e0",
+              color: "#e6eaf2",
               lineHeight: 1.2,
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -72,50 +74,111 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
           >
             {node.label}
           </span>
-          <span
+          <div
             style={{
-              fontSize: "10px",
-              color: "#555555",
-              lineHeight: 1.3,
-              marginTop: "1px",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginTop: "3px",
             }}
           >
-            {node.category}
-            <span style={{ margin: "0 4px", color: "#333333" }}>/</span>
-            {node.source}
-            <span style={{ margin: "0 4px", color: "#333333" }}>&middot;</span>
-            {connectionCount} connections
-            <span style={{ margin: "0 4px", color: "#333333" }}>&middot;</span>
-            {confidencePct}%
-          </span>
+            <span
+              style={{
+                fontSize: "10px",
+                color: "#9aa3b2",
+                background: "#1f2430",
+                borderRadius: "4px",
+                padding: "1px 6px",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+            >
+              {node.category}
+            </span>
+            <span
+              style={{
+                fontSize: "10px",
+                color: "#9aa3b2",
+                background: "#1f2430",
+                borderRadius: "4px",
+                padding: "1px 6px",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+            >
+              {node.source}
+            </span>
+            <span style={{ fontSize: "10px", color: "#6b7280" }}>
+              {connectionCount} conn
+            </span>
+            <span style={{ fontSize: "10px", color: "#6b7280" }}>
+              Confidence {confidencePct}%
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Right: action buttons */}
       <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-        {([
-          { label: "Route", onClick: onRoute, color: "#7c6aff" },
-          { label: "Edit", onClick: onEdit, color: "#555555" },
-          { label: "Del", onClick: onDelete, color: "#ef4444" },
-        ] as const).map((btn) => (
-          <button
-            key={btn.label}
-            onClick={btn.onClick}
+        {isRouting ? (
+          <span
             style={{
-              background: "none",
-              border: `1px solid ${btn.color}40`,
-              borderRadius: "4px",
-              padding: "3px 8px",
-              fontSize: "9px",
-              color: btn.color,
-              cursor: "pointer",
-              letterSpacing: "0.3px",
+              fontSize: "11px",
+              color: "#7c6aff",
+              padding: "4px 10px",
               lineHeight: 1.2,
             }}
           >
-            {btn.label}
+            Analyzing...
+          </span>
+        ) : (
+          <button
+            onClick={onRoute}
+            style={{
+              background: "none",
+              border: "1px solid rgba(91, 108, 255, 0.3)",
+              borderRadius: "6px",
+              padding: "4px 10px",
+              fontSize: "11px",
+              color: "#5b6cff",
+              cursor: "pointer",
+              lineHeight: 1.2,
+            }}
+          >
+            Route
           </button>
-        ))}
+        )}
+        <button
+          onClick={onEdit}
+          style={{
+            background: "none",
+            border: "1px solid #1f2430",
+            borderRadius: "6px",
+            padding: "4px 10px",
+            fontSize: "11px",
+            color: "#9aa3b2",
+            cursor: "pointer",
+            lineHeight: 1.2,
+          }}
+        >
+          Edit
+        </button>
+        <button
+          onClick={onDelete}
+          style={{
+            background: "none",
+            border: "none",
+            borderRadius: "6px",
+            padding: "4px 10px",
+            fontSize: "11px",
+            color: "#ef4444",
+            cursor: "pointer",
+            lineHeight: 1.2,
+            opacity: 0.7,
+          }}
+        >
+          Delete
+        </button>
       </div>
     </div>
   );
