@@ -216,8 +216,6 @@ const App: React.FC = () => {
             {([
               { name: "ChatGPT", color: "#10a37f" },
               { name: "Claude", color: "#d97706" },
-              { name: "Gemini", color: "#4285f4" },
-              { name: "Cursor", color: "#888888" },
             ] as const).map((p) => (
               <div
                 key={p.name}
