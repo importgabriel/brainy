@@ -194,6 +194,45 @@ const App: React.FC = () => {
           edges={edges}
           onNodeSelect={handleNodeSelect}
         />
+
+        {/* Footer bar */}
+        <div
+          style={{
+            padding: "10px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderTop: "1px solid #1e1e2e",
+          }}
+        >
+          <span style={{ fontSize: "10px", color: "#444444", letterSpacing: "0.3px" }}>
+            {nodes.length} nodes
+            <span style={{ margin: "0 3px" }}>&middot;</span>
+            {edges.length} edges
+            <span style={{ margin: "0 3px" }}>&middot;</span>
+            {selectedNodeId ? 1 : 0} active
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+            {([
+              { name: "ChatGPT", color: "#10a37f" },
+              { name: "Claude", color: "#d97706" },
+              { name: "Gemini", color: "#4285f4" },
+              { name: "Cursor", color: "#888888" },
+            ] as const).map((p) => (
+              <div
+                key={p.name}
+                title={p.name}
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  background: p.color,
+                  border: `1px solid ${p.color}4d`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
