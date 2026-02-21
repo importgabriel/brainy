@@ -39,110 +39,108 @@ const edges: ContextGraphEdge[] = [
 
 const noop = () => {};
 
-/* ── Header (inline) ─────────────────────────────────── */
+/* ── Header ──────────────────────────────────────────── */
 
-const Header: React.FC<{ confidencePercent: number }> = ({ confidencePercent }) => {
-  const circumference = 2 * Math.PI * 14;
-  const dashOffset = circumference - (confidencePercent / 100) * circumference;
-
-  return (
-    <div
-      style={{
-        padding: "12px 16px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        borderBottom: "1px solid #1e1e2e",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div
-          style={{
-            width: "28px",
-            height: "28px",
-            borderRadius: "7px",
-            background: "linear-gradient(135deg, #7c6aff, #ec4899)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <span style={{ fontWeight: 800, fontSize: "14px", color: "#ffffff", lineHeight: 1 }}>
-            S
-          </span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <span
-            style={{
-              fontSize: "15px",
-              fontWeight: 700,
-              color: "#e0e0e0",
-              letterSpacing: "-0.3px",
-              lineHeight: 1.2,
-            }}
-          >
-            SwitchMemory
-          </span>
-          <span
-            style={{
-              fontSize: "10px",
-              color: "#555555",
-              letterSpacing: "0.5px",
-              textTransform: "uppercase",
-              marginTop: "1px",
-              lineHeight: 1.2,
-            }}
-          >
-            Universal Context Graph
-          </span>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center" }}>
+const Header: React.FC<{ confidencePercent: number }> = ({ confidencePercent }) => (
+  <div
+    style={{
+      padding: "12px 16px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      borderBottom: "1px solid #1f2430",
+    }}
+  >
+    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <div
+        style={{
+          width: "26px",
+          height: "26px",
+          borderRadius: "6px",
+          background: "rgba(91, 108, 255, 0.14)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <span
           style={{
-            fontSize: "9px",
-            color: "#555555",
-            letterSpacing: "1px",
-            textTransform: "uppercase",
-            marginRight: "6px",
+            fontWeight: 700,
+            fontSize: "13px",
+            color: "#5b6cff",
+            lineHeight: 1,
           }}
         >
-          CTX
+          S
         </span>
-        <svg width="36" height="36" viewBox="0 0 36 36">
-          <circle cx="18" cy="18" r="14" stroke="#1e1e2e" strokeWidth="3" fill="none" />
-          <circle
-            cx="18"
-            cy="18"
-            r="14"
-            stroke="#7c6aff"
-            strokeWidth="3"
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            strokeLinecap="round"
-            style={{
-              transform: "rotate(-90deg)",
-              transformOrigin: "50% 50%",
-              transition: "stroke-dashoffset 0.3s ease",
-            }}
-          />
-          <text
-            x="18"
-            y="18"
-            textAnchor="middle"
-            dominantBaseline="central"
-            style={{ fontSize: "9px", fill: "#e0e0e0", fontWeight: 600 }}
-          >
-            {confidencePercent}%
-          </text>
-        </svg>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        <span
+          style={{
+            fontSize: "14px",
+            fontWeight: 600,
+            color: "#e6eaf2",
+            letterSpacing: "-0.2px",
+            lineHeight: 1.2,
+          }}
+        >
+          SwitchMemory
+        </span>
+        <span
+          style={{
+            fontSize: "10px",
+            color: "#6b7280",
+            letterSpacing: "0.3px",
+            marginTop: "1px",
+            lineHeight: 1.2,
+          }}
+        >
+          Universal Context Graph
+        </span>
       </div>
     </div>
-  );
-};
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        border: "1px solid #1f2430",
+        borderRadius: "6px",
+        padding: "4px 10px",
+      }}
+    >
+      <span
+        style={{
+          fontSize: "10px",
+          color: "#6b7280",
+          letterSpacing: "0.5px",
+          textTransform: "uppercase",
+        }}
+      >
+        CTX
+      </span>
+      <span
+        style={{
+          fontSize: "11px",
+          color: "#5b6cff",
+          fontWeight: 600,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {confidencePercent}%
+      </span>
+    </div>
+  </div>
+);
 
-/* ── Footer (inline) ─────────────────────────────────── */
+/* ── Footer ──────────────────────────────────────────── */
+
+const PLATFORMS = [
+  { name: "ChatGPT", color: "#10a37f" },
+  { name: "Claude", color: "#d97706" },
+  { name: "Gemini", color: "#4285f4" },
+  { name: "Perplexity", color: "#8b5cf6" },
+] as const;
 
 const Footer: React.FC<{
   nodeCount: number;
@@ -155,30 +153,27 @@ const Footer: React.FC<{
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      borderTop: "1px solid #1e1e2e",
+      borderTop: "1px solid #1f2430",
     }}
   >
-    <span style={{ fontSize: "10px", color: "#444444", letterSpacing: "0.3px" }}>
+    <span style={{ fontSize: "11px", color: "#6b7280", letterSpacing: "0.2px" }}>
       {nodeCount} nodes
-      <span style={{ margin: "0 3px" }}>&middot;</span>
+      <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
       {edgeCount} edges
-      <span style={{ margin: "0 3px" }}>&middot;</span>
+      <span style={{ margin: "0 4px", opacity: 0.4 }}>&middot;</span>
       {activeCount} active
     </span>
-    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-      {([
-        { name: "ChatGPT", color: "#10a37f" },
-        { name: "Claude", color: "#d97706" },
-      ] as const).map((p) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      {PLATFORMS.map((p) => (
         <div
           key={p.name}
           title={p.name}
           style={{
-            width: "8px",
-            height: "8px",
+            width: "6px",
+            height: "6px",
             borderRadius: "50%",
             background: p.color,
-            border: `1px solid ${p.color}4d`,
+            opacity: 0.5,
           }}
         />
       ))}
@@ -237,9 +232,9 @@ const App: React.FC = () => {
   return (
     <div
       style={{
-        background: "#0a0a0f",
+        background: "#0f1115",
         minHeight: "100vh",
-        color: "#e0e0e0",
+        color: "#e6eaf2",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
@@ -254,7 +249,7 @@ const App: React.FC = () => {
       >
         <div
           style={{
-            border: "1px solid #1e1e2e",
+            border: "1px solid #1f2430",
             borderRadius: "8px",
             overflow: "hidden",
           }}

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 export interface QueryBarProps {
   query: string;
@@ -15,6 +15,7 @@ const QueryBar: React.FC<QueryBarProps> = ({
   activeRelevantCount,
   onClear,
 }) => {
+  const [focused, setFocused] = useState(false);
   const hasQuery = query.trim().length > 0;
 
   return (
@@ -24,57 +25,61 @@ const QueryBar: React.FC<QueryBarProps> = ({
           display: "flex",
           alignItems: "center",
           gap: "10px",
-          background: "#12121a",
-          border: "1px solid #1e1e2e",
-          borderRadius: "10px",
-          padding: "10px 12px",
-          margin: "10px 16px",
+          background: "#151922",
+          border: `1px solid ${focused ? "#5b6cff" : "#1f2430"}`,
+          borderRadius: "8px",
+          padding: "9px 12px",
+          margin: "8px 12px",
+          transition: "border-color 0.15s ease",
         }}
       >
-        {/* Magnifying glass */}
-        <span
-          style={{
-            fontSize: "16px",
-            color: "#6b7280",
-            flexShrink: 0,
-            lineHeight: 1,
-          }}
+        {/* Search icon */}
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ flexShrink: 0 }}
         >
-          ⌕
-        </span>
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
 
         {/* Input */}
         <input
           type="text"
           value={query}
           onChange={(e) => onChangeQuery(e.target.value)}
-          placeholder="Search your memory graph… (e.g. 'AWS deploy', 'budgeting feature')"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="Search your memory graph…"
           style={{
             flex: 1,
             background: "transparent",
             border: "none",
             outline: "none",
-            color: "#e5e7eb",
+            color: "#e6eaf2",
             fontSize: "13px",
             fontFamily: "inherit",
             padding: 0,
           }}
         />
 
-        {/* Relevant pill */}
+        {/* Status text */}
         {hasQuery && (
           <span
             style={{
-              fontSize: "10px",
-              color: "#9ca3af",
-              background: "#1e1e2e",
-              borderRadius: "6px",
-              padding: "3px 8px",
+              fontSize: "11px",
+              color: "#6b7280",
               whiteSpace: "nowrap",
               flexShrink: 0,
             }}
           >
-            {activeRelevantCount}/{relevantCount} relevant active
+            {relevantCount} relevant &middot; {activeRelevantCount} active
           </span>
         )}
 
@@ -84,13 +89,14 @@ const QueryBar: React.FC<QueryBarProps> = ({
             onClick={onClear}
             style={{
               background: "none",
-              border: "1px solid #1e1e2e",
-              borderRadius: "8px",
-              padding: "4px 10px",
-              fontSize: "10px",
-              color: "#6b7280",
+              border: "1px solid #1f2430",
+              borderRadius: "6px",
+              padding: "3px 8px",
+              fontSize: "11px",
+              color: "#9aa3b2",
               cursor: "pointer",
               flexShrink: 0,
+              lineHeight: 1.2,
             }}
           >
             Clear
@@ -98,28 +104,16 @@ const QueryBar: React.FC<QueryBarProps> = ({
         )}
       </div>
 
-      {/* Helper text below bar */}
+      {/* Helper text */}
       {hasQuery && relevantCount === 0 && (
         <div
           style={{
-            padding: "4px 16px 2px",
+            padding: "2px 16px 4px",
             fontSize: "11px",
             color: "#6b7280",
           }}
         >
           No matching memories found
-        </div>
-      )}
-      {hasQuery && relevantCount > 0 && (
-        <div
-          style={{
-            padding: "4px 16px 2px",
-            fontSize: "11px",
-            color: "#6b7280",
-          }}
-        >
-          Showing {relevantCount} matching memories — click nodes to activate
-          context
         </div>
       )}
     </div>
