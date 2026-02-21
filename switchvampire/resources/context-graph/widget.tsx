@@ -1,4 +1,9 @@
-import { McpUseProvider, useWidget, type WidgetMetadata } from "mcp-use/react";
+import {
+  McpUseProvider,
+  useWidget,
+  useCallTool,
+  type WidgetMetadata,
+} from "mcp-use/react";
 import React, { useState, useCallback, useMemo } from "react";
 import { z } from "zod";
 import ContextGraph from "../components/ContextGraph";
@@ -29,6 +34,8 @@ export const propSchema = z.object({
 
 type ContextGraphWidgetProps = z.infer<typeof propSchema>;
 
+type WidgetState = { activeNodeIds: string[] };
+
 export const widgetMetadata: WidgetMetadata = {
   description: "Interactive SVG knowledge graph showing user context as nodes and edges",
   props: propSchema,
@@ -42,106 +49,155 @@ export const widgetMetadata: WidgetMetadata = {
 
 const noop = () => {};
 
-const ROUTING_SUGGESTION = {
-  platform: "Claude 3.7 Sonnet",
-  color: "#d97706",
-  reason: "handles SQL migrations with 40% higher accuracy for your established patterns.",
-  nodeCount: 3,
-} as const;
+/* ── Display mode button ────────────────────────────── */
+
+const displayModeButtonStyle: React.CSSProperties = {
+  width: "20px",
+  height: "20px",
+  border: "1px solid #1e1e2e",
+  borderRadius: "4px",
+  background: "transparent",
+  color: "#6b6b7b",
+  fontSize: "12px",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+  lineHeight: 1,
+};
 
 /* ── Header ──────────────────────────────────────────── */
 
-const Header: React.FC<{ confidencePercent: number }> = ({ confidencePercent }) => (
-  <div
-    style={{
-      padding: "12px 16px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      borderBottom: "1px solid #1f2430",
-    }}
-  >
-    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-      <div
-        style={{
-          width: "26px",
-          height: "26px",
-          borderRadius: "6px",
-          background: "rgba(91, 108, 255, 0.14)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span
-          style={{
-            fontWeight: 700,
-            fontSize: "13px",
-            color: "#5b6cff",
-            lineHeight: 1,
-          }}
-        >
-          S
-        </span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        <span
-          style={{
-            fontSize: "14px",
-            fontWeight: 600,
-            color: "#e6eaf2",
-            letterSpacing: "-0.2px",
-            lineHeight: 1.2,
-          }}
-        >
-          SwitchMemory
-        </span>
-        <span
-          style={{
-            fontSize: "10px",
-            color: "#6b7280",
-            letterSpacing: "0.3px",
-            marginTop: "1px",
-            lineHeight: 1.2,
-          }}
-        >
-          Universal Context Graph
-        </span>
-      </div>
-    </div>
+const Header: React.FC<{
+  confidencePercent: number;
+  displayMode?: string;
+  onRequestDisplayMode: (mode: "pip" | "fullscreen" | "inline") => void;
+}> = ({ confidencePercent, displayMode, onRequestDisplayMode }) => {
+  const isExpanded = displayMode === "pip" || displayMode === "fullscreen";
+
+  return (
     <div
       style={{
+        padding: "12px 16px",
         display: "flex",
         alignItems: "center",
-        gap: "6px",
-        border: "1px solid #1f2430",
-        borderRadius: "6px",
-        padding: "4px 10px",
+        justifyContent: "space-between",
+        borderBottom: "1px solid #1f2430",
       }}
     >
-      <span
-        style={{
-          fontSize: "10px",
-          color: "#6b7280",
-          letterSpacing: "0.5px",
-          textTransform: "uppercase",
-        }}
-      >
-        CTX
-      </span>
-      <span
-        style={{
-          fontSize: "11px",
-          color: "#5b6cff",
-          fontWeight: 600,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {confidencePercent}%
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div
+          style={{
+            width: "26px",
+            height: "26px",
+            borderRadius: "6px",
+            background: "rgba(91, 108, 255, 0.14)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: "13px",
+              color: "#5b6cff",
+              lineHeight: 1,
+            }}
+          >
+            S
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <span
+            style={{
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "#e6eaf2",
+              letterSpacing: "-0.2px",
+              lineHeight: 1.2,
+            }}
+          >
+            SwitchMemory
+          </span>
+          <span
+            style={{
+              fontSize: "10px",
+              color: "#6b7280",
+              letterSpacing: "0.3px",
+              marginTop: "1px",
+              lineHeight: 1.2,
+            }}
+          >
+            Universal Context Graph
+          </span>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        {/* Display mode buttons */}
+        {isExpanded ? (
+          <button
+            onClick={() => onRequestDisplayMode("inline")}
+            style={displayModeButtonStyle}
+            title="Exit"
+          >
+            ✕
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => onRequestDisplayMode("pip")}
+              style={displayModeButtonStyle}
+              title="Picture-in-picture"
+            >
+              ⊡
+            </button>
+            <button
+              onClick={() => onRequestDisplayMode("fullscreen")}
+              style={displayModeButtonStyle}
+              title="Fullscreen"
+            >
+              ⛶
+            </button>
+          </>
+        )}
+        {/* CTX meter */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            border: "1px solid #1f2430",
+            borderRadius: "6px",
+            padding: "4px 10px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "10px",
+              color: "#6b7280",
+              letterSpacing: "0.5px",
+              textTransform: "uppercase",
+            }}
+          >
+            CTX
+          </span>
+          <span
+            style={{
+              fontSize: "11px",
+              color: "#5b6cff",
+              fontWeight: 600,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {confidencePercent}%
+          </span>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /* ── Footer ──────────────────────────────────────────── */
 
@@ -191,25 +247,63 @@ const Footer: React.FC<{
   </div>
 );
 
+/* ── Pulsing border keyframes (injected once) ────────── */
+
+const PULSE_STYLE_ID = "ctx-graph-pulse-style";
+
+function ensurePulseStyle() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(PULSE_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = PULSE_STYLE_ID;
+  style.textContent = `
+    @keyframes ctx-graph-border-pulse {
+      0%, 100% { border-color: #7c6aff; }
+      50% { border-color: transparent; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /* ── Widget ──────────────────────────────────────────── */
 
 const ContextGraphWidget: React.FC = () => {
-  const { props, isPending } = useWidget<ContextGraphWidgetProps>();
+  const {
+    props,
+    isPending,
+    sendFollowUpMessage,
+    state,
+    setState,
+    requestDisplayMode,
+    displayMode,
+  } = useWidget<ContextGraphWidgetProps, WidgetState>();
+
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showRouting, setShowRouting] = useState(false);
 
-  const handleNodeSelect = useCallback(
-    (nodeId: string | null, _connectedIds: Set<string>) => {
-      setSelectedNodeId(nodeId);
-    },
-    []
-  );
+  /* ── MCP tool hooks ────────────────────────────────── */
+
+  const { callTool: searchMemories, isPending: isSearching } =
+    useCallTool("search_memories");
+
+  const { callTool: getRouting, isPending: isRouting } =
+    useCallTool("get_routing_suggestion");
+
+  const { callTool: deleteMemory } = useCallTool("delete_memory");
+
+  const { callTool: logFeedback } = useCallTool("log_feedback");
+
+  const { callTool: saveMemory } = useCallTool("save_memory");
+
+  /* ── Inject pulse animation CSS ────────────────────── */
+  ensurePulseStyle();
+
+  /* ── Derived data ──────────────────────────────────── */
 
   const nodes = isPending ? [] : (props.nodes as ContextGraphNode[]);
   const edges = isPending ? [] : (props.edges as ContextGraphEdge[]);
 
-  /* Compute relevant node IDs from query (frontend-only string match) */
   const relevantNodeIds = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return new Set<string>();
@@ -235,7 +329,6 @@ const ContextGraphWidget: React.FC = () => {
     return edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length;
   }, [selectedNodeId, edges]);
 
-  /* CTX meter: relevance-based when query is active */
   const relevantCount = relevantNodeIds.size;
   const activeRelevantCount =
     selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
@@ -243,6 +336,53 @@ const ContextGraphWidget: React.FC = () => {
     relevantCount > 0
       ? Math.round((activeRelevantCount / relevantCount) * 100)
       : 0;
+
+  /* ── Handlers ──────────────────────────────────────── */
+
+  const handleNodeSelect = useCallback(
+    (nodeId: string | null, _connectedIds: Set<string>) => {
+      setSelectedNodeId(nodeId);
+      if (nodeId) {
+        const node = (props.nodes as ContextGraphNode[]).find((n) => n.id === nodeId);
+        if (node) {
+          (searchMemories as (args: Record<string, unknown>) => void)({
+            query: node.label,
+            top_k: 5,
+          });
+        }
+        setState({
+          activeNodeIds: [...(state?.activeNodeIds ?? []), nodeId],
+        });
+      }
+    },
+    [props.nodes, searchMemories, state, setState]
+  );
+
+  const handleRoute = useCallback(() => {
+    if (selectedNode) {
+      (getRouting as (args: Record<string, unknown>, opts?: Record<string, unknown>) => void)(
+        { prompt: selectedNode.label, task_type: selectedNode.category },
+        { onSuccess: () => setShowRouting(true) }
+      );
+    }
+  }, [selectedNode, getRouting]);
+
+  const handleDelete = useCallback(() => {
+    if (selectedNode) {
+      (deleteMemory as (args: Record<string, unknown>) => void)({
+        memory_id: selectedNode.id,
+      });
+    }
+  }, [selectedNode, deleteMemory]);
+
+  const handleRoutingAccept = useCallback(() => {
+    setShowRouting(false);
+    sendFollowUpMessage(
+      `The user accepted a routing suggestion. Switch context to Claude 3.7 Sonnet for this task — it handles SQL migrations with higher accuracy for their established patterns.`
+    );
+  }, [sendFollowUpMessage]);
+
+  /* ── Render ────────────────────────────────────────── */
 
   if (isPending) {
     return (
@@ -276,7 +416,11 @@ const ContextGraphWidget: React.FC = () => {
           position: "relative",
         }}
       >
-        <Header confidencePercent={confidencePercent} />
+        <Header
+          confidencePercent={confidencePercent}
+          displayMode={displayMode}
+          onRequestDisplayMode={requestDisplayMode}
+        />
         <QueryBar
           query={query}
           onChangeQuery={setQuery}
@@ -284,29 +428,48 @@ const ContextGraphWidget: React.FC = () => {
           activeRelevantCount={activeRelevantCount}
           onClear={() => setQuery("")}
         />
-        <ContextGraph
-          nodes={nodes}
-          edges={edges}
-          onNodeSelect={handleNodeSelect}
-        />
+        {/* Graph area — pulsing border when searching */}
+        <div
+          style={
+            isSearching
+              ? {
+                  border: "1px solid #7c6aff",
+                  animation: "ctx-graph-border-pulse 1.5s ease-in-out infinite",
+                }
+              : undefined
+          }
+        >
+          <ContextGraph
+            nodes={nodes}
+            edges={edges}
+            onNodeSelect={handleNodeSelect}
+          />
+        </div>
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
             connectionCount={connectionCount}
-            onRoute={() => setShowRouting(true)}
+            onRoute={handleRoute}
             onEdit={noop}
-            onDelete={noop}
+            onDelete={handleDelete}
+            isRouting={isRouting}
           />
         )}
         <Footer
           nodeCount={nodes.length}
           edgeCount={edges.length}
-          activeCount={selectedNodeId ? 1 : 0}
+          activeCount={state?.activeNodeIds?.length ?? (selectedNodeId ? 1 : 0)}
         />
         {showRouting && (
           <RoutingCard
-            recommended={ROUTING_SUGGESTION}
-            onAccept={() => setShowRouting(false)}
+            recommended={{
+              platform: "Claude 3.7 Sonnet",
+              color: "#d97706",
+              reason:
+                "handles SQL migrations with 40% higher accuracy for your established patterns.",
+              nodeCount: nodes.filter((n) => n.category === "code").length || 3,
+            }}
+            onAccept={handleRoutingAccept}
             onDismiss={() => setShowRouting(false)}
           />
         )}

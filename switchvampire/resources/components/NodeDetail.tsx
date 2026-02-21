@@ -22,6 +22,7 @@ export interface NodeDetailProps {
   onRoute: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  isRouting?: boolean;
 }
 
 const NodeDetail: React.FC<NodeDetailProps> = ({
@@ -30,6 +31,7 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
   onRoute,
   onEdit,
   onDelete,
+  isRouting = false,
 }) => {
   const catColor = CATEGORY_COLORS[node.category];
   const srcColor = SOURCE_COLORS[node.source];
@@ -118,21 +120,34 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
 
       {/* Right: action buttons */}
       <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-        <button
-          onClick={onRoute}
-          style={{
-            background: "none",
-            border: "1px solid rgba(91, 108, 255, 0.3)",
-            borderRadius: "6px",
-            padding: "4px 10px",
-            fontSize: "11px",
-            color: "#5b6cff",
-            cursor: "pointer",
-            lineHeight: 1.2,
-          }}
-        >
-          Route
-        </button>
+        {isRouting ? (
+          <span
+            style={{
+              fontSize: "11px",
+              color: "#7c6aff",
+              padding: "4px 10px",
+              lineHeight: 1.2,
+            }}
+          >
+            Analyzing...
+          </span>
+        ) : (
+          <button
+            onClick={onRoute}
+            style={{
+              background: "none",
+              border: "1px solid rgba(91, 108, 255, 0.3)",
+              borderRadius: "6px",
+              padding: "4px 10px",
+              fontSize: "11px",
+              color: "#5b6cff",
+              cursor: "pointer",
+              lineHeight: 1.2,
+            }}
+          >
+            Route
+          </button>
+        )}
         <button
           onClick={onEdit}
           style={{
