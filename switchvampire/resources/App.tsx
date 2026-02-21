@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from "react";
 import ContextGraph from "./components/ContextGraph";
 import NodeDetail from "./components/NodeDetail";
+import QueryBar from "./components/QueryBar";
 import type { ContextGraphNode, ContextGraphEdge } from "./components/ContextGraph";
 
 const nodes: ContextGraphNode[] = [
@@ -189,6 +190,23 @@ const Footer: React.FC<{
 
 const App: React.FC = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  /* Compute relevant node IDs from query (frontend-only string match) */
+  const relevantNodeIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    return new Set(
+      nodes
+        .filter((n) => {
+          const label = (n.label || "").toLowerCase();
+          const category = (n.category || "").toLowerCase();
+          const source = (n.source || "").toLowerCase();
+          return label.includes(q) || category.includes(q) || source.includes(q);
+        })
+        .map((n) => n.id)
+    );
+  }, [query]);
 
   const handleNodeSelect = useCallback(
     (nodeId: string | null, _connectedIds: Set<string>) => {
@@ -207,9 +225,14 @@ const App: React.FC = () => {
     return edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length;
   }, [selectedNodeId]);
 
-  const confidencePercent = selectedNodeId
-    ? Math.round((1 / nodes.length) * 100)
-    : 0;
+  /* CTX meter: relevance-based when query is active */
+  const relevantCount = relevantNodeIds.size;
+  const activeRelevantCount =
+    selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
+  const confidencePercent =
+    relevantCount > 0
+      ? Math.round((activeRelevantCount / relevantCount) * 100)
+      : 0;
 
   return (
     <div
@@ -237,6 +260,13 @@ const App: React.FC = () => {
           }}
         >
           <Header confidencePercent={confidencePercent} />
+          <QueryBar
+            query={query}
+            onChangeQuery={setQuery}
+            relevantCount={relevantCount}
+            activeRelevantCount={activeRelevantCount}
+            onClear={() => setQuery("")}
+          />
           <ContextGraph
             nodes={nodes}
             edges={edges}
