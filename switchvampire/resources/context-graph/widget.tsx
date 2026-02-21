@@ -3,6 +3,7 @@ import React, { useState, useCallback, useMemo } from "react";
 import { z } from "zod";
 import ContextGraph from "../components/ContextGraph";
 import NodeDetail from "../components/NodeDetail";
+import QueryBar from "../components/QueryBar";
 import type { ContextGraphNode, ContextGraphEdge } from "../components/ContextGraph";
 
 const nodeSchema = z.object({
@@ -192,6 +193,7 @@ const Footer: React.FC<{
 const ContextGraphWidget: React.FC = () => {
   const { props, isPending } = useWidget<ContextGraphWidgetProps>();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const handleNodeSelect = useCallback(
     (nodeId: string | null, _connectedIds: Set<string>) => {
@@ -223,6 +225,22 @@ const ContextGraphWidget: React.FC = () => {
 
   const { nodes, edges } = props;
 
+  /* Compute relevant node IDs from query (frontend-only string match) */
+  const relevantNodeIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    return new Set(
+      (nodes as ContextGraphNode[])
+        .filter((n) => {
+          const label = (n.label || "").toLowerCase();
+          const category = (n.category || "").toLowerCase();
+          const source = (n.source || "").toLowerCase();
+          return label.includes(q) || category.includes(q) || source.includes(q);
+        })
+        .map((n) => n.id)
+    );
+  }, [query, nodes]);
+
   const selectedNode = selectedNodeId
     ? (nodes as ContextGraphNode[]).find((n) => n.id === selectedNodeId) ?? null
     : null;
@@ -231,9 +249,14 @@ const ContextGraphWidget: React.FC = () => {
     ? edges.filter((e) => e.from === selectedNodeId || e.to === selectedNodeId).length
     : 0;
 
-  const confidencePercent = selectedNodeId
-    ? Math.round((1 / nodes.length) * 100)
-    : 0;
+  /* CTX meter: relevance-based when query is active */
+  const relevantCount = relevantNodeIds.size;
+  const activeRelevantCount =
+    selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
+  const confidencePercent =
+    relevantCount > 0
+      ? Math.round((activeRelevantCount / relevantCount) * 100)
+      : 0;
 
   return (
     <McpUseProvider>
@@ -246,6 +269,13 @@ const ContextGraphWidget: React.FC = () => {
         }}
       >
         <Header confidencePercent={confidencePercent} />
+        <QueryBar
+          query={query}
+          onChangeQuery={setQuery}
+          relevantCount={relevantCount}
+          activeRelevantCount={activeRelevantCount}
+          onClear={() => setQuery("")}
+        />
         <ContextGraph
           nodes={nodes as ContextGraphNode[]}
           edges={edges as ContextGraphEdge[]}
