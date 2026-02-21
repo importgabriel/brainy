@@ -1,0 +1,12 @@
+{
+  "name": "brainy",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "SwitchMemory — Universal AI context memory",
+  "scripts": {
+    "postinstall": "cd backend && npm install",
+    "build": "cd backend && npm run build",
+    "start": "cd backend && npm start"
+  }
+}
