@@ -9,6 +9,7 @@ import {
   shareGraph,
   loadSharedGraph,
   deleteNode,
+  getEdgesForNodes,
 } from "./src/graph/store.js";
 
 // ─── Server ───────────────────────────────────────────────────
@@ -54,7 +55,7 @@ server.tool(
       chat_id:  z.string().optional().describe("Platform chat/session ID for scoping to a chat graph"),
       explicit: z.boolean().default(false).describe("True if user stated this directly"),
     }),
-    widget: { name: "memory-panel", invoking: "Saving...", invoked: "Saved" },
+    widget: { name: "context-graph", invoking: "Saving...", invoked: "Saved" },
   },
   async ({ content, type, platform, chat_id, explicit }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -90,7 +91,7 @@ server.tool(
       topic:   z.string().describe("The current topic or question"),
       chat_id: z.string().optional().describe("Also search this chat's graph if provided"),
     }),
-    widget: { name: "memory-panel", invoking: "Loading context...", invoked: "Context loaded" },
+    widget: { name: "context-graph", invoking: "Loading context...", invoked: "Context loaded" },
   },
   async ({ topic, chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -118,8 +119,10 @@ server.tool(
       });
     }
 
+    const edges = await getEdgesForNodes(nodes.map(n => n.id));
+
     return widget({
-      props: { event: "context_loaded", nodes, confidence },
+      props: { event: "context_loaded", nodes, edges, confidence },
       output: text(
         `Found ${nodes.length} relevant memories:\n\n${contextString}`
       ),
@@ -136,7 +139,7 @@ server.tool(
     schema: z.object({
       chat_id: z.string().optional().describe("Show memories from this specific chat graph instead"),
     }),
-    widget: { name: "memory-panel", invoking: "Loading memories...", invoked: "Memories loaded" },
+    widget: { name: "context-graph", invoking: "Loading memories...", invoked: "Memories loaded" },
   },
   async ({ chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -154,10 +157,51 @@ server.tool(
     }
 
     const nodes = await listGraphNodes(userId, graphId);
+    const edges = await getEdgesForNodes(nodes.map(n => n.id));
 
     return widget({
-      props: { event: "list_loaded", nodes, graphId },
+      props: { event: "list_loaded", nodes, edges, graphId },
       output: text(`You have ${nodes.length} memories stored.`),
+    });
+  }
+);
+
+// ─── Tool: show_context_graph ─────────────────────────────────
+// Main entry point for viewing the context graph visualization
+
+server.tool(
+  {
+    name: "show-context-graph",
+    description:
+      "Display the SwitchMemory context graph showing all user knowledge nodes and relationships as an interactive visualization.",
+    schema: z.object({
+      chat_id: z.string().optional().describe("Show graph for this specific chat instead of global"),
+    }),
+    widget: { name: "context-graph", invoking: "Loading context graph...", invoked: "Context graph loaded" },
+  },
+  async ({ chat_id }, ctx) => {
+    const userId = resolveUserId(ctx);
+    const globalGraph = await ensureGlobalGraph(userId);
+    let graphId = globalGraph.id;
+
+    if (chat_id) {
+      const { data } = await (await import("./src/db/client.js")).db
+        .from("context_graphs")
+        .select("id")
+        .eq("owner_id", userId)
+        .eq("platform_chat_id", chat_id)
+        .single();
+      if (data) graphId = data.id;
+    }
+
+    const nodes = await listGraphNodes(userId, graphId);
+    const edges = await getEdgesForNodes(nodes.map(n => n.id));
+
+    return widget({
+      props: { event: "list_loaded", nodes, edges, graphId },
+      output: text(
+        `Displaying context graph with ${nodes.length} nodes and ${edges.length} edges`
+      ),
     });
   }
 );
@@ -171,7 +215,7 @@ server.tool(
     schema: z.object({
       node_id: z.string().describe("The memory ID to delete"),
     }),
-    widget: { name: "memory-panel", invoking: "Deleting...", invoked: "Deleted" },
+    widget: { name: "context-graph", invoking: "Deleting...", invoked: "Deleted" },
   },
   async ({ node_id }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -197,7 +241,7 @@ server.tool(
       chat_id: z.string().optional().describe("Required if scope=chat"),
       permission: z.enum(["read","write"]).default("read"),
     }),
-    widget: { name: "memory-panel", invoking: "Creating share link...", invoked: "Link ready" },
+    widget: { name: "context-graph", invoking: "Creating share link...", invoked: "Link ready" },
   },
   async ({ scope, chat_id, permission }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -237,13 +281,14 @@ server.tool(
     schema: z.object({
       share_token: z.string(),
     }),
-    widget: { name: "memory-panel", invoking: "Loading shared context...", invoked: "Context loaded" },
+    widget: { name: "context-graph", invoking: "Loading shared context...", invoked: "Context loaded" },
   },
   async ({ share_token }) => {
     const { nodes, graphName, permission } = await loadSharedGraph(share_token);
+    const edges = await getEdgesForNodes(nodes.map(n => n.id));
 
     return widget({
-      props: { event: "shared_graph_loaded", nodes, graphName, permission, readOnly: permission === "read" },
+      props: { event: "shared_graph_loaded", nodes, edges, graphName, permission, readOnly: permission === "read" },
       output: text(
         `Loaded ${nodes.length} memories from "${graphName}":\n\n` +
         nodes.map(n => `[${n.type}] ${n.content}`).join("\n")
