@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 
 export interface ContextGraphNode {
   id: string;
@@ -10,14 +10,30 @@ export interface ContextGraphNode {
   confidence: number;
 }
 
+export type EdgeRelationship =
+  | "related_to" | "part_of" | "contradicts"
+  | "supersedes" | "depends_on" | "used_in";
+
 export interface ContextGraphEdge {
   from: string;
   to: string;
+  relationship?: EdgeRelationship;
+  weight?: number;
 }
+
+const EDGE_COLORS: Record<EdgeRelationship, string> = {
+  related_to:  "#45455a",
+  part_of:     "#3b82f6",
+  contradicts: "#ef4444",
+  supersedes:  "#f59e0b",
+  depends_on:  "#8b5cf6",
+  used_in:     "#ec4899",
+};
 
 export interface ContextGraphProps {
   nodes: ContextGraphNode[];
   edges: ContextGraphEdge[];
+  highlightIds?: Set<string>;
   onNodeSelect: (nodeId: string | null, connectedIds: Set<string>) => void;
 }
 
@@ -39,9 +55,11 @@ const SOURCE_COLORS: Record<ContextGraphNode["source"], string> = {
 const ContextGraph: React.FC<ContextGraphProps> = ({
   nodes,
   edges,
+  highlightIds,
   onNodeSelect,
 }) => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [hoveredEdge, setHoveredEdge] = useState<number | null>(null);
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, ContextGraphNode>();
@@ -79,12 +97,17 @@ const ContextGraph: React.FC<ContextGraphProps> = ({
     [selectedNodeId, edges, onNodeSelect]
   );
 
+  // highlight filter takes priority over selection dimming
   const getNodeOpacity = (nodeId: string): number => {
+    if (highlightIds && highlightIds.size > 0)
+      return highlightIds.has(nodeId) ? 1 : 0.15;
     if (!activeIds) return 1;
     return activeIds.has(nodeId) ? 1 : 0.2;
   };
 
   const getEdgeOpacity = (from: string, to: string): number => {
+    if (highlightIds && highlightIds.size > 0)
+      return highlightIds.has(from) || highlightIds.has(to) ? 0.6 : 0.05;
     if (!activeIds) return 1;
     return activeIds.has(from) && activeIds.has(to) ? 1 : 0.2;
   };
@@ -103,20 +126,38 @@ const ContextGraph: React.FC<ContextGraphProps> = ({
         const fromNode = nodeMap.get(edge.from);
         const toNode = nodeMap.get(edge.to);
         if (!fromNode || !toNode) return null;
+        const rel = edge.relationship ?? "related_to";
+        const color = EDGE_COLORS[rel] ?? "#45455a";
+        const strokeWidth = 1 + (edge.weight ?? 0.5) * 2;
+        const mx = (fromNode.x + toNode.x) / 2;
+        const my = (fromNode.y + toNode.y) / 2;
+        const isHovered = hoveredEdge === i;
         return (
-          <line
-            key={`edge-${i}`}
-            x1={fromNode.x}
-            y1={fromNode.y}
-            x2={toNode.x}
-            y2={toNode.y}
-            stroke="#45455a"
-            strokeWidth={1.5}
-            style={{
-              opacity: getEdgeOpacity(edge.from, edge.to),
-              transition: "all 0.3s ease",
-            }}
-          />
+          <g key={`edge-${i}`}>
+            <line
+              x1={fromNode.x} y1={fromNode.y}
+              x2={toNode.x}   y2={toNode.y}
+              stroke={color}
+              strokeWidth={isHovered ? strokeWidth + 1 : strokeWidth}
+              strokeDasharray={rel === "contradicts" ? "5 3" : rel === "supersedes" ? "8 3" : undefined}
+              style={{
+                opacity: getEdgeOpacity(edge.from, edge.to),
+                transition: "all 0.3s ease",
+                cursor: "default",
+              }}
+              onMouseEnter={() => setHoveredEdge(i)}
+              onMouseLeave={() => setHoveredEdge(null)}
+            />
+            {isHovered && (
+              <text
+                x={mx} y={my - 5}
+                textAnchor="middle"
+                style={{ fill: color, fontSize: "8px", fontFamily: "monospace", pointerEvents: "none" }}
+              >
+                {rel.replace("_", " ")}
+              </text>
+            )}
+          </g>
         );
       })}
 
@@ -136,6 +177,10 @@ const ContextGraph: React.FC<ContextGraphProps> = ({
             }}
             onClick={() => handleNodeClick(node.id)}
           >
+            {highlightIds?.has(node.id) && (
+              <circle cx={node.x} cy={node.y} r={r + 7} fill="none"
+                stroke="#7c6aff" strokeWidth={1.5} opacity={0.6} />
+            )}
             <circle cx={node.x} cy={node.y} r={r} fill={fillColor} />
             <circle
               cx={node.x}

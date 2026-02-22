@@ -10,7 +10,7 @@ import ContextGraph from "../components/ContextGraph";
 import NodeDetail from "../components/NodeDetail";
 import QueryBar from "../components/QueryBar";
 import RoutingCard from "../components/RoutingCard";
-import type { ContextGraphNode, ContextGraphEdge } from "../components/ContextGraph";
+import type { ContextGraphNode, ContextGraphEdge, EdgeRelationship } from "../components/ContextGraph";
 
 // ─── Backend node schema (matches ContextNode from store.ts) ──
 
@@ -134,13 +134,18 @@ function backendNodesToGraph(backendNodes: BackendNode[]): ContextGraphNode[] {
 // ─── Edge helpers ─────────────────────────────────────────────
 
 function backendEdgesToGraph(
-  backendEdges: Array<{ source_id: string; target_id: string }> | undefined,
+  backendEdges: Array<{ source_id: string; target_id: string; relationship?: string; weight?: number }> | undefined,
   nodeIds: Set<string>
 ): ContextGraphEdge[] {
   if (!backendEdges?.length) return [];
   return backendEdges
     .filter((e) => nodeIds.has(e.source_id) && nodeIds.has(e.target_id))
-    .map((e) => ({ from: e.source_id, to: e.target_id }));
+    .map((e) => ({
+      from: e.source_id,
+      to: e.target_id,
+      relationship: (e.relationship as EdgeRelationship) ?? "related_to",
+      weight: e.weight ?? 0.5,
+    }));
 }
 
 function buildEdgesFallback(nodes: ContextGraphNode[]): ContextGraphEdge[] {
@@ -680,8 +685,6 @@ const ContextGraphWidget: React.FC = () => {
   }, [selectedNodeId, edges]);
 
   const relevantCount = relevantNodeIds.size;
-  const activeRelevantCount =
-    selectedNodeId && relevantNodeIds.has(selectedNodeId) ? 1 : 0;
   const confidencePercent =
     nodes.length > 0
       ? Math.round(confidence * 100) || (relevantCount > 0 ? Math.round((activeRelevantCount / relevantCount) * 100) : 0)
@@ -779,8 +782,9 @@ const ContextGraphWidget: React.FC = () => {
         <QueryBar
           query={query}
           onChangeQuery={setQuery}
+          onSearch={(q) => (getContext as (args: Record<string, unknown>) => void)({ topic: q })}
           relevantCount={relevantCount}
-          activeRelevantCount={activeRelevantCount}
+          isSearching={isSearching}
           onClear={() => setQuery("")}
         />
         {/* Graph area — pulsing border when searching */}
@@ -800,6 +804,7 @@ const ContextGraphWidget: React.FC = () => {
             <ContextGraph
               nodes={nodes}
               edges={edges}
+              highlightIds={relevantNodeIds.size > 0 ? relevantNodeIds : undefined}
               onNodeSelect={handleNodeSelect}
             />
           )}

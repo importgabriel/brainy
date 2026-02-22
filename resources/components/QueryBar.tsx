@@ -3,16 +3,18 @@ import React, { useState } from "react";
 export interface QueryBarProps {
   query: string;
   onChangeQuery: (q: string) => void;
+  onSearch: (q: string) => void;
   relevantCount: number;
-  activeRelevantCount: number;
+  isSearching?: boolean;
   onClear: () => void;
 }
 
 const QueryBar: React.FC<QueryBarProps> = ({
   query,
   onChangeQuery,
+  onSearch,
   relevantCount,
-  activeRelevantCount,
+  isSearching,
   onClear,
 }) => {
   const [focused, setFocused] = useState(false);
@@ -26,7 +28,7 @@ const QueryBar: React.FC<QueryBarProps> = ({
           alignItems: "center",
           gap: "10px",
           background: "#151922",
-          border: `1px solid ${focused ? "#5b6cff" : "#1f2430"}`,
+          border: `1px solid ${isSearching ? "#7c6aff" : focused ? "#5b6cff" : "#1f2430"}`,
           borderRadius: "8px",
           padding: "9px 12px",
           margin: "8px 12px",
@@ -56,7 +58,8 @@ const QueryBar: React.FC<QueryBarProps> = ({
           onChange={(e) => onChangeQuery(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="Search your memory graph…"
+          onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) onSearch(query.trim()); }}
+          placeholder="Filter memories… (↵ to search)"
           style={{
             flex: 1,
             background: "transparent",
@@ -74,12 +77,12 @@ const QueryBar: React.FC<QueryBarProps> = ({
           <span
             style={{
               fontSize: "11px",
-              color: "#6b7280",
+              color: relevantCount > 0 ? "#5b6cff" : "#6b7280",
               whiteSpace: "nowrap",
               flexShrink: 0,
             }}
           >
-            {relevantCount} relevant &middot; {activeRelevantCount} active
+            {relevantCount > 0 ? `${relevantCount} match${relevantCount === 1 ? "" : "es"}` : "no matches"}
           </span>
         )}
 
