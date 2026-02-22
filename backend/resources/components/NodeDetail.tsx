@@ -38,7 +38,6 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
   const catColor = CATEGORY_COLORS[node.category];
   const srcColor = SOURCE_COLORS[node.source];
   const confidencePct = Math.round(node.confidence * 100);
-  const [expanded, setExpanded] = React.useState(false);
 
   return (
     <div
@@ -46,188 +45,81 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
         borderTop: "1px solid #1f2430",
       }}
     >
-      {/* Header row: node info + actions */}
-      <div
-        style={{
-          padding: "12px 16px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-        }}
-      >
-        {/* Left: node info */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+      {/* Header: node label + meta badges */}
+      <div style={{ padding: "12px 16px 8px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
           <div
             style={{
-              width: "8px",
-              height: "8px",
+              width: "10px",
+              height: "10px",
               borderRadius: "50%",
               background: catColor,
               border: `2px solid ${srcColor}`,
               flexShrink: 0,
             }}
           />
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <span
-              style={{
-                fontSize: "13px",
-                fontWeight: 600,
-                color: "#e6eaf2",
-                lineHeight: 1.2,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {node.label}
-            </span>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                marginTop: "3px",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "10px",
-                  color: "#9aa3b2",
-                  background: "#1f2430",
-                  borderRadius: "4px",
-                  padding: "1px 6px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.3px",
-                }}
-              >
-                {node.category}
-              </span>
-              <span
-                style={{
-                  fontSize: "10px",
-                  color: "#9aa3b2",
-                  background: "#1f2430",
-                  borderRadius: "4px",
-                  padding: "1px 6px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.3px",
-                }}
-              >
-                {node.source}
-              </span>
-              <span style={{ fontSize: "10px", color: "#6b7280" }}>
-                {connectionCount} conn
-              </span>
-              <span style={{ fontSize: "10px", color: "#6b7280" }}>
-                Confidence {confidencePct}%
-              </span>
-            </div>
-          </div>
+          <span
+            style={{
+              fontSize: "14px",
+              fontWeight: 700,
+              color: "#e6eaf2",
+              lineHeight: 1.3,
+            }}
+          >
+            {node.label}
+          </span>
         </div>
-
-        {/* Right: action buttons */}
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-          {onInject && (
-            <button
-              onClick={onInject}
-              style={{
-                background: "rgba(91, 108, 255, 0.15)",
-                border: "1px solid #5b6cff",
-                borderRadius: "6px",
-                padding: "4px 12px",
-                fontSize: "11px",
-                color: "#5b6cff",
-                cursor: "pointer",
-                lineHeight: 1.2,
-                fontWeight: 600,
-              }}
-            >
-              Inject into Chat
-            </button>
-          )}
-          <button
-            onClick={() => setExpanded((v) => !v)}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", paddingLeft: "20px" }}>
+          <span
             style={{
-              background: "none",
-              border: "1px solid #1f2430",
-              borderRadius: "6px",
-              padding: "4px 10px",
-              fontSize: "11px",
+              fontSize: "10px",
               color: "#9aa3b2",
-              cursor: "pointer",
-              lineHeight: 1.2,
+              background: "#1f2430",
+              borderRadius: "4px",
+              padding: "1px 6px",
+              textTransform: "uppercase",
+              letterSpacing: "0.3px",
             }}
           >
-            {expanded ? "Hide" : "Preview"}
-          </button>
-          {isRouting ? (
-            <span
-              style={{
-                fontSize: "11px",
-                color: "#7c6aff",
-                padding: "4px 10px",
-                lineHeight: 1.2,
-              }}
-            >
-              Analyzing...
-            </span>
-          ) : (
-            <button
-              onClick={onRoute}
-              style={{
-                background: "none",
-                border: "1px solid rgba(91, 108, 255, 0.3)",
-                borderRadius: "6px",
-                padding: "4px 10px",
-                fontSize: "11px",
-                color: "#5b6cff",
-                cursor: "pointer",
-                lineHeight: 1.2,
-              }}
-            >
-              Route
-            </button>
-          )}
-          <button
-            onClick={onDelete}
+            {node.category}
+          </span>
+          <span
             style={{
-              background: "none",
-              border: "none",
-              borderRadius: "6px",
-              padding: "4px 10px",
-              fontSize: "11px",
-              color: "#ef4444",
-              cursor: "pointer",
-              lineHeight: 1.2,
-              opacity: 0.7,
+              fontSize: "10px",
+              color: "#9aa3b2",
+              background: "#1f2430",
+              borderRadius: "4px",
+              padding: "1px 6px",
+              textTransform: "uppercase",
+              letterSpacing: "0.3px",
             }}
           >
-            Delete
-          </button>
+            {node.source}
+          </span>
+          <span style={{ fontSize: "10px", color: "#6b7280" }}>
+            {connectionCount} conn
+          </span>
+          <span style={{ fontSize: "10px", color: "#6b7280" }}>
+            {confidencePct}%
+          </span>
         </div>
       </div>
 
-      {/* Expanded: full content preview */}
-      {expanded && node.fullContent && (
-        <div
-          style={{
-            padding: "0 16px 12px 16px",
-          }}
-        >
+      {/* Full content — always visible, no toggle needed */}
+      {node.fullContent && (
+        <div style={{ padding: "0 16px 10px 16px" }}>
           <div
             style={{
               background: "#0a0a0f",
               border: "1px solid #1f2430",
               borderRadius: "6px",
               padding: "10px 12px",
-              fontSize: "11px",
+              fontSize: "12px",
               color: "#c4c8d4",
-              fontFamily: "monospace",
-              lineHeight: 1.5,
+              lineHeight: 1.6,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
-              maxHeight: "120px",
+              maxHeight: "150px",
               overflowY: "auto",
             }}
           >
@@ -235,6 +127,81 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
           </div>
         </div>
       )}
+
+      {/* Primary CTA: Inject into Chat — large, full-width, unmissable */}
+      {onInject && (
+        <div style={{ padding: "0 16px 10px 16px" }}>
+          <button
+            onClick={onInject}
+            style={{
+              width: "100%",
+              background: "#5b6cff",
+              border: "none",
+              borderRadius: "8px",
+              padding: "10px 16px",
+              fontSize: "13px",
+              fontWeight: 700,
+              color: "#fff",
+              cursor: "pointer",
+              letterSpacing: "0.2px",
+              transition: "background 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#4f5fe6")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#5b6cff")}
+          >
+            Inject into Chat
+          </button>
+        </div>
+      )}
+
+      {/* Secondary actions row */}
+      <div
+        style={{
+          padding: "0 16px 10px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: "6px",
+        }}
+      >
+        {isRouting ? (
+          <span style={{ fontSize: "11px", color: "#7c6aff", padding: "4px 10px" }}>
+            Analyzing...
+          </span>
+        ) : (
+          <button
+            onClick={onRoute}
+            style={{
+              background: "none",
+              border: "1px solid rgba(91, 108, 255, 0.3)",
+              borderRadius: "6px",
+              padding: "4px 10px",
+              fontSize: "11px",
+              color: "#5b6cff",
+              cursor: "pointer",
+              lineHeight: 1.2,
+            }}
+          >
+            Route
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          style={{
+            background: "none",
+            border: "none",
+            borderRadius: "6px",
+            padding: "4px 10px",
+            fontSize: "11px",
+            color: "#ef4444",
+            cursor: "pointer",
+            lineHeight: 1.2,
+            opacity: 0.7,
+          }}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 };
