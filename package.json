@@ -7,6 +7,7 @@
   "scripts": {
     "postinstall": "cd backend && npm install",
     "build": "cd backend && npm run build",
-    "start": "cd backend && npm start"
+    "start": "cd backend && npm start",
+    "seed": "node --env-file=backend/.env --import tsx/esm backend/src/db/seed.ts"
   }
 }
