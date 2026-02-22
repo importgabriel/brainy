@@ -1,5 +1,6 @@
 import { MCPServer, text, widget } from "mcp-use/server";
 import { z } from "zod";
+import { db } from "./backend/src/db/client.js";
 import {
   ensureGlobalGraph,
   getOrCreateChatGraph,
@@ -95,7 +96,6 @@ server.tool(
     const graphIds = [globalGraph.id];
 
     if (chat_id) {
-      const { db } = await import("../backend/src/db/client.js");
       const { data } = await db
         .from("context_graphs")
         .select("id")
@@ -144,7 +144,6 @@ server.tool(
     let graphId = globalGraph.id;
 
     if (chat_id) {
-      const { db } = await import("../backend/src/db/client.js");
       const { data } = await db
         .from("context_graphs")
         .select("id")
@@ -185,7 +184,6 @@ server.tool(
     let graphId = globalGraph.id;
 
     if (chat_id) {
-      const { db } = await import("../backend/src/db/client.js");
       const { data } = await db
         .from("context_graphs")
         .select("id")
@@ -253,7 +251,6 @@ server.tool(
       graphId = g.id;
     } else {
       if (!chat_id) throw new Error("chat_id required for chat scope");
-      const { db } = await import("../backend/src/db/client.js");
       const { data } = await db
         .from("context_graphs")
         .select("id")

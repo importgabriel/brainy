@@ -139,24 +139,13 @@ export async function getContextForTopic(args: GetContextArgs): Promise<ContextR
   const embedding = await embedText(topic);
   const seedLimit = Math.ceil(limit / 2);
 
-  // 1. Find seed nodes via vector similarity
-  let seedQuery = db
-    .from("context_nodes")
-    .select("*, node_graph_memberships(graph_id)")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .order("embedding <=> " + JSON.stringify(embedding))
-    .limit(seedLimit);
-
-  // scope to specific graph membership if provided
-  if (graphIds?.length) {
-    seedQuery = seedQuery.in(
-      "id",
-      db.from("node_graph_memberships").select("node_id").in("graph_id", graphIds) as any
-    );
-  }
-
-  const { data: seeds, error: seedErr } = await seedQuery;
+  // 1. Find seed nodes via vector similarity (uses match_context_nodes RPC)
+  const { data: seeds, error: seedErr } = await db.rpc("match_context_nodes", {
+    p_user_id:   userId,
+    p_embedding: embedding,
+    p_graph_ids: graphIds ?? [],
+    p_limit:     seedLimit,
+  });
   if (seedErr) throw new Error(`seed search failed: ${seedErr.message}`);
   if (!seeds?.length) return { nodes: [], contextString: "", confidence: 0 };
 
@@ -210,30 +199,29 @@ export async function getContextForTopic(args: GetContextArgs): Promise<ContextR
 // ─── Auto-link new node to related nodes (background) ────────
 
 async function autoLink(userId: string, nodeId: string, embedding: number[]) {
-  // Find nodes that are similar but NOT near-duplicates (0.70–0.94)
-  const { data: related } = await db
-    .from("context_nodes")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .neq("id", nodeId)
-    .limit(5);
+  // Find semantically similar nodes via HNSW (excludes self, uses the vector index)
+  const { data: candidates } = await db.rpc("match_context_nodes", {
+    p_user_id:   userId,
+    p_embedding: embedding,
+    p_graph_ids: [],   // search all user nodes
+    p_limit:     6,    // +1 because the node itself may appear
+  });
 
-  if (!related?.length) return;
+  if (!candidates?.length) return;
 
-  // Build edges (idempotent via UNIQUE constraint)
-  const edges = related.map((r: any) => ({
+  const related = (candidates as ContextNode[]).filter(n => n.id !== nodeId).slice(0, 5);
+  if (!related.length) return;
+
+  const edges = related.map(r => ({
     user_id:      userId,
     source_id:    nodeId,
     target_id:    r.id,
     relationship: "related_to" as EdgeRelationship,
-    weight:       0.8,
+    weight:       +(1 - (r as any).distance || 0.8).toFixed(3),
   }));
 
-  await db
-    .from("context_edges")
-    .insert(edges, { count: "exact" });
-  // ON CONFLICT DO NOTHING handled by UNIQUE constraint
+  await db.from("context_edges").insert(edges);
+  // ON CONFLICT DO NOTHING handled by UNIQUE(source_id, target_id, relationship)
 }
 
 // ─── List nodes for a graph ───────────────────────────────────
@@ -245,9 +233,9 @@ export async function listGraphNodes(
 ): Promise<ContextNode[]> {
   const { data, error } = await db
     .from("context_nodes")
-    .select("*, node_graph_memberships!inner(graph_id)")
+    .select("*")
     .eq("user_id", userId)
-    .eq("node_graph_memberships.graph_id", graphId)
+    .in("id", db.from("node_graph_memberships").select("node_id").eq("graph_id", graphId) as any)
     .eq("is_active", true)
     .order("last_accessed", { ascending: false })
     .limit(limit);
