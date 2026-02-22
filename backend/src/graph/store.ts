@@ -168,14 +168,18 @@ export async function getContextForTopic(args: GetContextArgs): Promise<ContextR
   const seedLimit = Math.ceil(limit / 2);
 
   // 1. Find seed nodes via vector similarity (uses match_context_nodes RPC)
-  const { data: seeds, error: seedErr } = await db.rpc("match_context_nodes", {
+  // Filter out any invalid graph IDs before passing to RPC
+  const validGraphIds = (graphIds ?? []).filter((id): id is string => typeof id === "string" && id.length > 0);
+  const { data: rawSeeds, error: seedErr } = await db.rpc("match_context_nodes", {
     p_user_id:   userId,
     p_embedding: embedding,
-    p_graph_ids: graphIds ?? [],
+    p_graph_ids: validGraphIds,
     p_limit:     seedLimit,
   });
   if (seedErr) throw new Error(`seed search failed: ${seedErr.message}`);
-  if (!seeds?.length) return { nodes: [], contextString: "", confidence: 0 };
+  // Normalize: SETOF returns should be an array, but guard against object
+  const seeds = Array.isArray(rawSeeds) ? rawSeeds : rawSeeds ? [rawSeeds] : [];
+  if (!seeds.length) return { nodes: [], contextString: "", confidence: 0 };
 
   // 2. Traverse 1 hop outward (exclude contradictions)
   const seedIds = seeds.map((n: any) => n.id);
@@ -274,11 +278,22 @@ export async function listGraphNodes(
   graphId: string,
   limit = 50
 ): Promise<ContextNode[]> {
+  // Step 1: Get node IDs belonging to this graph
+  const { data: memberships, error: memErr } = await db
+    .from("node_graph_memberships")
+    .select("node_id")
+    .eq("graph_id", graphId);
+
+  if (memErr) throw new Error(`listGraphNodes membership query failed: ${memErr.message}`);
+  const nodeIds = (memberships ?? []).map((m: any) => m.node_id);
+  if (!nodeIds.length) return [];
+
+  // Step 2: Fetch the actual nodes
   const { data, error } = await db
     .from("context_nodes")
     .select("*")
     .eq("user_id", userId)
-    .in("id", db.from("node_graph_memberships").select("node_id").eq("graph_id", graphId) as any)
+    .in("id", nodeIds)
     .eq("is_active", true)
     .order("last_accessed", { ascending: false })
     .limit(limit);
