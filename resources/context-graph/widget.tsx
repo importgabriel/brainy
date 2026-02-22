@@ -119,6 +119,7 @@ function toGraphNode(n: BackendNode): ContextGraphNode {
   return {
     id: n.id,
     label,
+    fullContent: n.content,
     category: mapNodeType(n.type),
     source: mapPlatform(n.source_platform),
     x: 350,
@@ -552,6 +553,7 @@ const ContextGraphWidget: React.FC = () => {
   const [graphName, setGraphName] = useState<string | undefined>();
   const [readOnly, setReadOnly] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [graphVisible, setGraphVisible] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -582,6 +584,7 @@ const ContextGraphWidget: React.FC = () => {
 
     switch (props.event) {
       case "node_saved": {
+        // Silent — graph stays hidden, node tracked internally
         if (!props.node) return;
         setNodes((prev) => {
           const alreadyExists = prev.some((n) => n.id === props.node!.id);
@@ -593,10 +596,12 @@ const ContextGraphWidget: React.FC = () => {
           setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(repositioned));
           return repositioned;
         });
+        // Do NOT set graphVisible — saving is invisible
         break;
       }
 
       case "context_loaded": {
+        // Silent — background context retrieval, graph stays hidden
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
@@ -605,6 +610,21 @@ const ContextGraphWidget: React.FC = () => {
         setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
         setConfidence(props.confidence ?? 0);
         setSelectedNodeId(null);
+        // Do NOT set graphVisible — background retrieval is invisible
+        break;
+      }
+
+      case "context_recalled": {
+        // User explicitly asked to recall context — SHOW the graph
+        if (!props.nodes) return;
+        const recalledNodes = backendNodesToGraph(props.nodes);
+        setNodes(recalledNodes);
+        const recalledNodeIds = new Set(recalledNodes.map((n) => n.id));
+        const recalledEdges = backendEdgesToGraph(props.edges as any, recalledNodeIds);
+        setEdges(recalledEdges.length > 0 ? recalledEdges : buildEdgesFallback(recalledNodes));
+        setConfidence(props.confidence ?? 0);
+        setSelectedNodeId(null);
+        setGraphVisible(true);
         break;
       }
 
@@ -615,6 +635,7 @@ const ContextGraphWidget: React.FC = () => {
       }
 
       case "list_loaded": {
+        // Explicit user request to list/show — SHOW the graph
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
@@ -622,6 +643,7 @@ const ContextGraphWidget: React.FC = () => {
         const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
         setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
         setSelectedNodeId(null);
+        setGraphVisible(true);
         break;
       }
 
@@ -643,6 +665,7 @@ const ContextGraphWidget: React.FC = () => {
       }
 
       case "shared_graph_loaded": {
+        // Explicit load of shared graph — SHOW the graph
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
@@ -652,6 +675,7 @@ const ContextGraphWidget: React.FC = () => {
         setSelectedNodeId(null);
         setReadOnly(props.readOnly ?? false);
         setGraphName(props.graphName);
+        setGraphVisible(true);
         break;
       }
     }
@@ -687,7 +711,7 @@ const ContextGraphWidget: React.FC = () => {
   const relevantCount = relevantNodeIds.size;
   const confidencePercent =
     nodes.length > 0
-      ? Math.round(confidence * 100) || (relevantCount > 0 ? Math.round((activeRelevantCount / relevantCount) * 100) : 0)
+      ? Math.round(confidence * 100) || (relevantCount > 0 ? Math.round((relevantCount / nodes.length) * 100) : 0)
       : 0;
 
   const activeSources = useMemo(() => new Set(nodes.map((n) => n.source)), [nodes]);
@@ -698,18 +722,25 @@ const ContextGraphWidget: React.FC = () => {
     (nodeId: string | null, _connectedIds: Set<string>) => {
       setSelectedNodeId(nodeId);
       if (nodeId) {
-        const node = nodes.find((n) => n.id === nodeId);
-        if (node) {
-          (getContext as (args: Record<string, unknown>) => void)({
-            topic: node.label,
-          });
-        }
         setState({
           activeNodeIds: [...(state?.activeNodeIds ?? []), nodeId],
         });
       }
     },
-    [nodes, getContext, state, setState]
+    [state, setState]
+  );
+
+  const handleInjectContext = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      // Inject the full node content into the chat as a follow-up message
+      sendFollowUpMessage(
+        `Here is the recalled context for "${node.label}":\n\n${node.fullContent}\n\nPlease use this context to assist me.`
+      );
+      showToast(`Injected: ${node.label}`);
+    },
+    [nodes, sendFollowUpMessage, showToast]
   );
 
   const handleRoute = useCallback(() => {
@@ -739,6 +770,11 @@ const ContextGraphWidget: React.FC = () => {
 
   /* ── Render ────────────────────────────────────────── */
 
+  // Graph stays hidden until user explicitly requests context recall
+  if (!graphVisible) {
+    return null;
+  }
+
   if (isPending && nodes.length === 0) {
     return (
       <McpUseProvider>
@@ -755,7 +791,7 @@ const ContextGraphWidget: React.FC = () => {
           }}
         >
           <span style={{ color: "#6b7280", fontSize: "12px" }}>
-            Loading context graph...
+            Recalling context...
           </span>
         </div>
       </McpUseProvider>
@@ -809,6 +845,8 @@ const ContextGraphWidget: React.FC = () => {
             />
           )}
         </div>
+
+        {/* Node detail with inject button — shown when a node is selected */}
         {selectedNode && (
           <NodeDetail
             node={selectedNode}
@@ -816,6 +854,7 @@ const ContextGraphWidget: React.FC = () => {
             onRoute={handleRoute}
             onEdit={() => showToast("Update via chat: 'edit memory…'")}
             onDelete={handleDelete}
+            onInject={() => handleInjectContext(selectedNode.id)}
             isRouting={false}
           />
         )}

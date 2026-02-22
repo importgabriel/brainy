@@ -22,6 +22,7 @@ export interface NodeDetailProps {
   onRoute: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onInject?: () => void;
   isRouting?: boolean;
 }
 
@@ -31,155 +32,209 @@ const NodeDetail: React.FC<NodeDetailProps> = ({
   onRoute,
   onEdit,
   onDelete,
+  onInject,
   isRouting = false,
 }) => {
   const catColor = CATEGORY_COLORS[node.category];
   const srcColor = SOURCE_COLORS[node.source];
   const confidencePct = Math.round(node.confidence * 100);
+  const [expanded, setExpanded] = React.useState(false);
 
   return (
     <div
       style={{
-        padding: "12px 16px",
         borderTop: "1px solid #1f2430",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "12px",
       }}
     >
-      {/* Left: node info */}
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
-        <div
-          style={{
-            width: "8px",
-            height: "8px",
-            borderRadius: "50%",
-            background: catColor,
-            border: `2px solid ${srcColor}`,
-            flexShrink: 0,
-          }}
-        />
-        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <span
-            style={{
-              fontSize: "13px",
-              fontWeight: 600,
-              color: "#e6eaf2",
-              lineHeight: 1.2,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {node.label}
-          </span>
+      {/* Header row: node info + actions */}
+      <div
+        style={{
+          padding: "12px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+        }}
+      >
+        {/* Left: node info */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              marginTop: "3px",
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: catColor,
+              border: `2px solid ${srcColor}`,
+              flexShrink: 0,
             }}
-          >
+          />
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
             <span
               style={{
-                fontSize: "10px",
-                color: "#9aa3b2",
-                background: "#1f2430",
-                borderRadius: "4px",
-                padding: "1px 6px",
-                textTransform: "uppercase",
-                letterSpacing: "0.3px",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#e6eaf2",
+                lineHeight: 1.2,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              {node.category}
+              {node.label}
             </span>
-            <span
+            <div
               style={{
-                fontSize: "10px",
-                color: "#9aa3b2",
-                background: "#1f2430",
-                borderRadius: "4px",
-                padding: "1px 6px",
-                textTransform: "uppercase",
-                letterSpacing: "0.3px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                marginTop: "3px",
               }}
             >
-              {node.source}
-            </span>
-            <span style={{ fontSize: "10px", color: "#6b7280" }}>
-              {connectionCount} conn
-            </span>
-            <span style={{ fontSize: "10px", color: "#6b7280" }}>
-              Confidence {confidencePct}%
-            </span>
+              <span
+                style={{
+                  fontSize: "10px",
+                  color: "#9aa3b2",
+                  background: "#1f2430",
+                  borderRadius: "4px",
+                  padding: "1px 6px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                {node.category}
+              </span>
+              <span
+                style={{
+                  fontSize: "10px",
+                  color: "#9aa3b2",
+                  background: "#1f2430",
+                  borderRadius: "4px",
+                  padding: "1px 6px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                {node.source}
+              </span>
+              <span style={{ fontSize: "10px", color: "#6b7280" }}>
+                {connectionCount} conn
+              </span>
+              <span style={{ fontSize: "10px", color: "#6b7280" }}>
+                Confidence {confidencePct}%
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Right: action buttons */}
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-        {isRouting ? (
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#7c6aff",
-              padding: "4px 10px",
-              lineHeight: 1.2,
-            }}
-          >
-            Analyzing...
-          </span>
-        ) : (
+        {/* Right: action buttons */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+          {onInject && (
+            <button
+              onClick={onInject}
+              style={{
+                background: "rgba(91, 108, 255, 0.15)",
+                border: "1px solid #5b6cff",
+                borderRadius: "6px",
+                padding: "4px 12px",
+                fontSize: "11px",
+                color: "#5b6cff",
+                cursor: "pointer",
+                lineHeight: 1.2,
+                fontWeight: 600,
+              }}
+            >
+              Inject into Chat
+            </button>
+          )}
           <button
-            onClick={onRoute}
+            onClick={() => setExpanded((v) => !v)}
             style={{
               background: "none",
-              border: "1px solid rgba(91, 108, 255, 0.3)",
+              border: "1px solid #1f2430",
               borderRadius: "6px",
               padding: "4px 10px",
               fontSize: "11px",
-              color: "#5b6cff",
+              color: "#9aa3b2",
               cursor: "pointer",
               lineHeight: 1.2,
             }}
           >
-            Route
+            {expanded ? "Hide" : "Preview"}
           </button>
-        )}
-        <button
-          onClick={onEdit}
-          style={{
-            background: "none",
-            border: "1px solid #1f2430",
-            borderRadius: "6px",
-            padding: "4px 10px",
-            fontSize: "11px",
-            color: "#9aa3b2",
-            cursor: "pointer",
-            lineHeight: 1.2,
-          }}
-        >
-          Edit
-        </button>
-        <button
-          onClick={onDelete}
-          style={{
-            background: "none",
-            border: "none",
-            borderRadius: "6px",
-            padding: "4px 10px",
-            fontSize: "11px",
-            color: "#ef4444",
-            cursor: "pointer",
-            lineHeight: 1.2,
-            opacity: 0.7,
-          }}
-        >
-          Delete
-        </button>
+          {isRouting ? (
+            <span
+              style={{
+                fontSize: "11px",
+                color: "#7c6aff",
+                padding: "4px 10px",
+                lineHeight: 1.2,
+              }}
+            >
+              Analyzing...
+            </span>
+          ) : (
+            <button
+              onClick={onRoute}
+              style={{
+                background: "none",
+                border: "1px solid rgba(91, 108, 255, 0.3)",
+                borderRadius: "6px",
+                padding: "4px 10px",
+                fontSize: "11px",
+                color: "#5b6cff",
+                cursor: "pointer",
+                lineHeight: 1.2,
+              }}
+            >
+              Route
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            style={{
+              background: "none",
+              border: "none",
+              borderRadius: "6px",
+              padding: "4px 10px",
+              fontSize: "11px",
+              color: "#ef4444",
+              cursor: "pointer",
+              lineHeight: 1.2,
+              opacity: 0.7,
+            }}
+          >
+            Delete
+          </button>
+        </div>
       </div>
+
+      {/* Expanded: full content preview */}
+      {expanded && node.fullContent && (
+        <div
+          style={{
+            padding: "0 16px 12px 16px",
+          }}
+        >
+          <div
+            style={{
+              background: "#0a0a0f",
+              border: "1px solid #1f2430",
+              borderRadius: "6px",
+              padding: "10px 12px",
+              fontSize: "11px",
+              color: "#c4c8d4",
+              fontFamily: "monospace",
+              lineHeight: 1.5,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              maxHeight: "120px",
+              overflowY: "auto",
+            }}
+          >
+            {node.fullContent}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

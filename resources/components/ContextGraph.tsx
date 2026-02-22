@@ -3,6 +3,7 @@ import React, { useState, useMemo, useCallback, useRef } from "react";
 export interface ContextGraphNode {
   id: string;
   label: string;
+  fullContent: string;
   category: "fact" | "preference" | "project" | "code" | "decision";
   source: "chatgpt" | "claude" | "gemini" | "perplexity";
   x: number;

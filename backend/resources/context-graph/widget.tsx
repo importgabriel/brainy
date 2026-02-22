@@ -127,6 +127,7 @@ function toGraphNode(n: BackendNode): ContextGraphNode {
   return {
     id: n.id,
     label,
+    fullContent: n.content,
     category: mapNodeType(n.type),
     source: mapPlatform(n.source_platform),
     x: 350,
@@ -191,18 +192,18 @@ const DEMO_NODES = [
 ];
 
 const SEED_NODES: ContextGraphNode[] = [
-  { id: "nextjs", label: "Next.js", category: "project", source: "claude", x: 350, y: 80, confidence: 0.95 },
-  { id: "typescript", label: "TypeScript", category: "project", source: "chatgpt", x: 200, y: 130, confidence: 0.9 },
-  { id: "supabase", label: "Supabase", category: "project", source: "claude", x: 500, y: 130, confidence: 0.85 },
-  { id: "pgvector", label: "pgvector", category: "code", source: "chatgpt", x: 600, y: 220, confidence: 0.7 },
-  { id: "ceo", label: "CEO Role", category: "fact", source: "claude", x: 100, y: 250, confidence: 0.8 },
-  { id: "preseed", label: "Pre-seed Raise", category: "decision", source: "chatgpt", x: 250, y: 320, confidence: 0.75 },
-  { id: "uga", label: "UGA Target", category: "fact", source: "claude", x: 400, y: 380, confidence: 0.6 },
-  { id: "kayak", label: "Kayak for AI", category: "project", source: "chatgpt", x: 150, y: 380, confidence: 0.85 },
-  { id: "darktheme", label: "Dark Theme Pref", category: "preference", source: "claude", x: 550, y: 320, confidence: 0.65 },
-  { id: "concise", label: "Concise Pref", category: "preference", source: "chatgpt", x: 450, y: 250, confidence: 0.6 },
-  { id: "gpt4mini", label: "GPT-4.1 Mini Router", category: "code", source: "chatgpt", x: 300, y: 200, confidence: 0.8 },
-  { id: "starter", label: "$14.99 Starter Tier", category: "decision", source: "claude", x: 100, y: 130, confidence: 0.7 },
+  { id: "nextjs", label: "Next.js", fullContent: "Building the main application with Next.js framework for server-side rendering and API routes", category: "project", source: "claude", x: 350, y: 80, confidence: 0.95 },
+  { id: "typescript", label: "TypeScript", fullContent: "Using TypeScript as the primary language across the entire codebase with strict mode enabled", category: "project", source: "chatgpt", x: 200, y: 130, confidence: 0.9 },
+  { id: "supabase", label: "Supabase", fullContent: "Supabase is the backend database with PostgreSQL, row-level security, and real-time subscriptions", category: "project", source: "claude", x: 500, y: 130, confidence: 0.85 },
+  { id: "pgvector", label: "pgvector", fullContent: "Using pgvector extension for semantic similarity search with 1536-dimension embeddings from OpenAI", category: "code", source: "chatgpt", x: 600, y: 220, confidence: 0.7 },
+  { id: "ceo", label: "CEO Role", fullContent: "User is CEO of a startup building an AI-powered travel planning platform", category: "fact", source: "claude", x: 100, y: 250, confidence: 0.8 },
+  { id: "preseed", label: "Pre-seed Raise", fullContent: "Decided on pre-seed fundraising round, targeting $500K-$1M from angel investors", category: "decision", source: "chatgpt", x: 250, y: 320, confidence: 0.75 },
+  { id: "uga", label: "UGA Target", fullContent: "Targeting University of Georgia students as initial user base for the travel planner", category: "fact", source: "claude", x: 400, y: 380, confidence: 0.6 },
+  { id: "kayak", label: "Kayak for AI", fullContent: "The product vision is 'Kayak for AI' — a meta-search engine that routes AI tasks to the best model", category: "project", source: "chatgpt", x: 150, y: 380, confidence: 0.85 },
+  { id: "darktheme", label: "Dark Theme Pref", fullContent: "User prefers dark theme across all applications and development environments", category: "preference", source: "claude", x: 550, y: 320, confidence: 0.65 },
+  { id: "concise", label: "Concise Pref", fullContent: "User prefers concise, direct communication without unnecessary verbosity", category: "preference", source: "chatgpt", x: 450, y: 250, confidence: 0.6 },
+  { id: "gpt4mini", label: "GPT-4.1 Mini Router", fullContent: "Using GPT-4.1 Mini for the routing classification layer to determine which AI model handles each task", category: "code", source: "chatgpt", x: 300, y: 200, confidence: 0.8 },
+  { id: "starter", label: "$14.99 Starter Tier", fullContent: "Decided on $14.99/month as the starter pricing tier for the product", category: "decision", source: "claude", x: 100, y: 130, confidence: 0.7 },
 ];
 
 /* ── Display mode button ────────────────────────────── */
@@ -846,6 +847,7 @@ const ContextGraphWidget: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>("graph");
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [demoIndex, setDemoIndex] = useState(0);
+  const [graphVisible, setGraphVisible] = useState(false);
   const seeded = useRef(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -888,6 +890,7 @@ const ContextGraphWidget: React.FC = () => {
       seeded.current = true;
       setNodes(SEED_NODES);
       setEdges(buildEdgesFallback(SEED_NODES));
+      setGraphVisible(true); // Demo mode: show graph for seed data
     }
   }, [isPending, nodes.length, props?.event]);
 
@@ -898,6 +901,7 @@ const ContextGraphWidget: React.FC = () => {
 
     switch (props.event) {
       case "node_saved": {
+        // Silent — graph stays hidden
         if (!props.node) return;
         pushLog("save", `Memory saved: ${props.node.content}`);
         setNodes((prev) => {
@@ -914,6 +918,7 @@ const ContextGraphWidget: React.FC = () => {
       }
 
       case "context_loaded": {
+        // Silent — background context retrieval
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
@@ -925,6 +930,21 @@ const ContextGraphWidget: React.FC = () => {
         break;
       }
 
+      case "context_recalled": {
+        // User explicitly asked to recall — SHOW the graph
+        if (!props.nodes) return;
+        const recalledNodes = backendNodesToGraph(props.nodes);
+        setNodes(recalledNodes);
+        const recalledNodeIds = new Set(recalledNodes.map((n) => n.id));
+        const recalledEdges = backendEdgesToGraph(props.edges as any, recalledNodeIds);
+        setEdges(recalledEdges.length > 0 ? recalledEdges : buildEdgesFallback(recalledNodes));
+        setConfidence(props.confidence ?? 0);
+        setSelectedNodeId(null);
+        setGraphVisible(true);
+        pushLog("search", `Context recalled: ${recalledNodes.length} nodes`);
+        break;
+      }
+
       case "context_empty": {
         setConfidence(0);
         showToast("No relevant memories found for this topic");
@@ -932,6 +952,7 @@ const ContextGraphWidget: React.FC = () => {
       }
 
       case "list_loaded": {
+        // Explicit user request — SHOW the graph
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
@@ -939,6 +960,7 @@ const ContextGraphWidget: React.FC = () => {
         const realEdges = backendEdgesToGraph(props.edges as any, nodeIds);
         setEdges(realEdges.length > 0 ? realEdges : buildEdgesFallback(graphNodes));
         setSelectedNodeId(null);
+        setGraphVisible(true);
         break;
       }
 
@@ -960,6 +982,7 @@ const ContextGraphWidget: React.FC = () => {
       }
 
       case "shared_graph_loaded": {
+        // Explicit — SHOW the graph
         if (!props.nodes) return;
         const graphNodes = backendNodesToGraph(props.nodes);
         setNodes(graphNodes);
@@ -969,6 +992,7 @@ const ContextGraphWidget: React.FC = () => {
         setSelectedNodeId(null);
         setReadOnly(props.readOnly ?? false);
         setGraphName(props.graphName);
+        setGraphVisible(true);
         break;
       }
     }
@@ -1020,17 +1044,26 @@ const ContextGraphWidget: React.FC = () => {
         const node = nodes.find((n) => n.id === nodeId);
         if (node) {
           pushLog("select", `Selected: ${node.label}`);
-          pushLog("search", `get-context({ topic: '${node.label}' })`);
-          (getContext as (args: Record<string, unknown>) => void)({
-            topic: node.label,
-          });
         }
         setState({
           activeNodeIds: [...(state?.activeNodeIds ?? []), nodeId],
         });
       }
     },
-    [nodes, getContext, state, setState, pushLog]
+    [nodes, state, setState, pushLog]
+  );
+
+  const handleInjectContext = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      pushLog("save", `Injected context: ${node.label}`);
+      sendFollowUpMessage(
+        `Here is the recalled context for "${node.label}":\n\n${node.fullContent}\n\nPlease use this context to assist me.`
+      );
+      showToast(`Injected: ${node.label}`);
+    },
+    [nodes, sendFollowUpMessage, showToast, pushLog]
   );
 
   const handleRoute = useCallback(() => {
@@ -1093,6 +1126,11 @@ const ContextGraphWidget: React.FC = () => {
 
   /* ── Render ────────────────────────────────────────── */
 
+  // Graph stays hidden until user explicitly requests context recall
+  if (!graphVisible) {
+    return null;
+  }
+
   if (isPending && nodes.length === 0) {
     return (
       <McpUseProvider>
@@ -1109,7 +1147,7 @@ const ContextGraphWidget: React.FC = () => {
           }}
         >
           <span style={{ color: "#6b7280", fontSize: "12px" }}>
-            Loading context graph...
+            Recalling context...
           </span>
         </div>
       </McpUseProvider>
@@ -1194,6 +1232,7 @@ const ContextGraphWidget: React.FC = () => {
                 onRoute={handleRoute}
                 onEdit={() => showToast("Update via chat: 'edit memory…'")}
                 onDelete={handleDelete}
+                onInject={() => handleInjectContext(selectedNode.id)}
                 isRouting={false}
               />
             )}
