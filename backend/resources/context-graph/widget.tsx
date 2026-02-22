@@ -58,6 +58,15 @@ type ContextGraphWidgetProps = z.infer<typeof propSchema>;
 
 type WidgetState = { activeNodeIds: string[] };
 
+type ActiveTab = "graph" | "stream" | "collab";
+
+interface LogEntry {
+  id: string;
+  type: string;
+  message: string;
+  timestamp: string;
+}
+
 export const widgetMetadata: WidgetMetadata = {
   description: "Interactive SVG knowledge graph showing user context as nodes and edges",
   props: propSchema,
@@ -405,6 +414,270 @@ const EmptyState: React.FC = () => (
   </div>
 );
 
+/* ── Tab Bar ─────────────────────────────────────────── */
+
+const TAB_ITEMS: { key: ActiveTab; label: string }[] = [
+  { key: "graph", label: "Context Graph" },
+  { key: "stream", label: "Live Stream" },
+  { key: "collab", label: "Collaborate" },
+];
+
+const TabBar: React.FC<{
+  activeTab: ActiveTab;
+  onTabChange: (tab: ActiveTab) => void;
+}> = ({ activeTab, onTabChange }) => (
+  <div
+    style={{
+      display: "flex",
+      width: "100%",
+      borderBottom: "1px solid #1f2430",
+    }}
+  >
+    {TAB_ITEMS.map((tab) => (
+      <button
+        key={tab.key}
+        onClick={() => onTabChange(tab.key)}
+        style={{
+          flex: 1,
+          background: "none",
+          border: "none",
+          borderBottom: activeTab === tab.key ? "2px solid #5b6cff" : "2px solid transparent",
+          color: activeTab === tab.key ? "#e6eaf2" : "#6b7280",
+          fontSize: "10px",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          padding: "10px 0",
+          cursor: "pointer",
+        }}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+);
+
+/* ── LiveStream ──────────────────────────────────────── */
+
+const LOG_BORDER_COLORS: Record<string, string> = {
+  search: "#3b82f6",
+  route: "#d97706",
+  save: "#10b981",
+  delete: "#ef4444",
+  share: "#7c6aff",
+  select: "#5b6cff",
+};
+
+const LiveStream: React.FC<{ entries: LogEntry[] }> = ({ entries }) => (
+  <div style={{ maxHeight: "380px", overflowY: "auto", padding: "8px 12px" }}>
+    {entries.length === 0 ? (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "120px",
+          color: "#6b7280",
+          fontSize: "11px",
+        }}
+      >
+        Interact with the graph to see live MCP calls
+      </div>
+    ) : (
+      entries.map((entry, index) => {
+        const borderColor = LOG_BORDER_COLORS[entry.type] || "#5b6cff";
+        const opacity = Math.max(1 - index * 0.08, 0.3);
+        return (
+          <div
+            key={entry.id}
+            style={{
+              background: "#12121a",
+              borderRadius: "8px",
+              padding: "10px 12px",
+              marginBottom: "6px",
+              borderLeft: `3px solid ${borderColor}`,
+              opacity,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "4px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  color: borderColor,
+                }}
+              >
+                {entry.type}
+              </span>
+              <span style={{ fontSize: "9px", color: "#45455a" }}>
+                {entry.timestamp}
+              </span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#e6eaf2" }}>
+              {entry.message}
+            </div>
+          </div>
+        );
+      })
+    )}
+  </div>
+);
+
+/* ── Collaborate ─────────────────────────────────────── */
+
+const SCOPE_CARDS = [
+  { title: "Project Level", icon: "◉", desc: "All collaborators see full context graph" },
+  { title: "Chat Level", icon: "◎", desc: "Share specific conversation context" },
+  { title: "Node Level", icon: "○", desc: "Share individual memory nodes" },
+];
+
+const TEAM_MEMBERS = [
+  { name: "Wayne", initial: "W", color: "#5b6cff", online: true, role: "Owner" },
+  { name: "Gabriel", initial: "G", color: "#10a37f", online: true, role: "Editor" },
+  { name: "Eshan", initial: "E", color: "#d97706", online: false, role: "Editor" },
+];
+
+const Collaborate: React.FC = () => (
+  <div style={{ padding: "12px" }}>
+    {SCOPE_CARDS.map((card) => (
+      <div
+        key={card.title}
+        style={{
+          background: "#12121a",
+          padding: "12px",
+          borderRadius: "8px",
+          border: "1px solid #1f2430",
+          marginBottom: "8px",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+        }}
+      >
+        <div
+          style={{
+            width: "28px",
+            height: "28px",
+            borderRadius: "50%",
+            background: "rgba(91, 108, 255, 0.08)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "14px",
+            color: "#5b6cff",
+            flexShrink: 0,
+          }}
+        >
+          {card.icon}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "#e6eaf2" }}>
+            {card.title}
+          </div>
+          <div style={{ fontSize: "10px", color: "#6b7280", marginTop: "2px" }}>
+            {card.desc}
+          </div>
+        </div>
+        <span style={{ color: "#6b7280", fontSize: "14px", flexShrink: 0 }}>→</span>
+      </div>
+    ))}
+
+    <div
+      style={{
+        fontSize: "10px",
+        textTransform: "uppercase",
+        color: "#6b7280",
+        marginTop: "16px",
+        marginBottom: "8px",
+        letterSpacing: "0.05em",
+      }}
+    >
+      Team
+    </div>
+
+    {TEAM_MEMBERS.map((member) => (
+      <div
+        key={member.name}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          padding: "8px 0",
+        }}
+      >
+        <div style={{ position: "relative", width: "28px", height: "28px", flexShrink: 0 }}>
+          <div
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "50%",
+              background: member.color,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "11px",
+              fontWeight: 700,
+              color: "#fff",
+            }}
+          >
+            {member.initial}
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              bottom: "-1px",
+              right: "-1px",
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: member.online ? "#10b981" : "#45455a",
+              border: "2px solid #0f1115",
+            }}
+          />
+        </div>
+        <span style={{ fontSize: "12px", color: "#e6eaf2", flex: 1 }}>
+          {member.name}
+        </span>
+        <span
+          style={{
+            fontSize: "9px",
+            color: "#6b7280",
+            border: "1px solid #1f2430",
+            borderRadius: "4px",
+            padding: "2px 6px",
+          }}
+        >
+          {member.role}
+        </span>
+      </div>
+    ))}
+
+    <button
+      style={{
+        width: "100%",
+        background: "#5b6cff",
+        color: "#fff",
+        fontSize: "10px",
+        padding: "8px",
+        borderRadius: "8px",
+        border: "none",
+        cursor: "pointer",
+        marginTop: "12px",
+        fontWeight: 600,
+      }}
+    >
+      ＋ Invite
+    </button>
+  </div>
+);
+
 /* ── Toast ────────────────────────────────────────────── */
 
 const Toast: React.FC<{ message: string }> = ({ message }) => (
@@ -549,6 +822,8 @@ const ContextGraphWidget: React.FC = () => {
   const [graphName, setGraphName] = useState<string | undefined>();
   const [readOnly, setReadOnly] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("graph");
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -572,6 +847,16 @@ const ContextGraphWidget: React.FC = () => {
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   }, []);
 
+  const pushLog = useCallback((type: string, message: string) => {
+    const entry: LogEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type,
+      message,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    };
+    setLogEntries((prev) => [entry, ...prev]);
+  }, []);
+
   /* ── Handle backend events ─────────────────────────── */
 
   useEffect(() => {
@@ -580,6 +865,7 @@ const ContextGraphWidget: React.FC = () => {
     switch (props.event) {
       case "node_saved": {
         if (!props.node) return;
+        pushLog("save", `Memory saved: ${props.node.content}`);
         setNodes((prev) => {
           const alreadyExists = prev.some((n) => n.id === props.node!.id);
           if (alreadyExists) return prev;
@@ -699,6 +985,8 @@ const ContextGraphWidget: React.FC = () => {
       if (nodeId) {
         const node = nodes.find((n) => n.id === nodeId);
         if (node) {
+          pushLog("select", `Selected: ${node.label}`);
+          pushLog("search", `get-context({ topic: '${node.label}' })`);
           (getContext as (args: Record<string, unknown>) => void)({
             topic: node.label,
           });
@@ -708,7 +996,7 @@ const ContextGraphWidget: React.FC = () => {
         });
       }
     },
-    [nodes, getContext, state, setState]
+    [nodes, getContext, state, setState, pushLog]
   );
 
   const handleRoute = useCallback(() => {
@@ -719,22 +1007,25 @@ const ContextGraphWidget: React.FC = () => {
 
   const handleDelete = useCallback(() => {
     if (selectedNode && !readOnly) {
+      pushLog("delete", `delete-memory({ id: '${selectedNode.id}' })`);
       (deleteMemory as (args: Record<string, unknown>) => void)({
         node_id: selectedNode.id,
       });
     }
-  }, [selectedNode, readOnly, deleteMemory]);
+  }, [selectedNode, readOnly, deleteMemory, pushLog]);
 
   const handleShare = useCallback(() => {
+    pushLog("share", `share-graph({ scope: 'global' })`);
     (shareGraph as (args: Record<string, unknown>) => void)({ scope: "global" });
-  }, [shareGraph]);
+  }, [shareGraph, pushLog]);
 
   const handleRoutingAccept = useCallback(() => {
     setShowRouting(false);
+    pushLog("route", "Routing accepted → Claude 3.7 Sonnet");
     sendFollowUpMessage(
       `The user accepted a routing suggestion. Switch context to Claude 3.7 Sonnet for this task — it handles SQL migrations with higher accuracy for their established patterns.`
     );
-  }, [sendFollowUpMessage]);
+  }, [sendFollowUpMessage, pushLog]);
 
   /* ── Render ────────────────────────────────────────── */
 
@@ -778,71 +1069,96 @@ const ContextGraphWidget: React.FC = () => {
           displayMode={displayMode}
           onRequestDisplayMode={requestDisplayMode}
         />
-        <QueryBar
-          query={query}
-          onChangeQuery={setQuery}
-          relevantCount={relevantCount}
-          activeRelevantCount={activeRelevantCount}
-          onClear={() => setQuery("")}
-        />
-        {/* Graph area — pulsing border when searching */}
-        <div
-          style={
-            isSearching
-              ? {
-                  border: "1px solid #7c6aff",
-                  animation: "ctx-graph-border-pulse 1.5s ease-in-out infinite",
-                }
-              : undefined
-          }
-        >
-          {nodes.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <ContextGraph
-              nodes={nodes}
-              edges={edges}
-              onNodeSelect={handleNodeSelect}
-            />
-          )}
-        </div>
-        {selectedNode && (
-          <NodeDetail
-            node={selectedNode}
-            connectionCount={connectionCount}
-            onRoute={handleRoute}
-            onEdit={() => showToast("Update via chat: 'edit memory…'")}
-            onDelete={handleDelete}
-            isRouting={false}
+        {activeTab === "graph" && (
+          <QueryBar
+            query={query}
+            onChangeQuery={setQuery}
+            relevantCount={relevantCount}
+            activeRelevantCount={activeRelevantCount}
+            onClear={() => setQuery("")}
           />
         )}
+        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
 
-        {!readOnly && nodes.length > 0 && (
-          <div
-            style={{
-              padding: "8px 16px",
-              borderTop: "1px solid #1f2430",
-              display: "flex",
-              justifyContent: "flex-end",
-            }}
-          >
-            <button
-              onClick={handleShare}
-              style={{
-                background: "none",
-                border: "1px solid #7c6aff40",
-                borderRadius: "6px",
-                padding: "4px 12px",
-                fontSize: "10px",
-                color: "#7c6aff",
-                cursor: "pointer",
-                letterSpacing: "0.3px",
-              }}
+        {activeTab === "graph" && (
+          <>
+            {/* Graph area — pulsing border when searching */}
+            <div
+              style={
+                isSearching
+                  ? {
+                      border: "1px solid #7c6aff",
+                      animation: "ctx-graph-border-pulse 1.5s ease-in-out infinite",
+                    }
+                  : undefined
+              }
             >
-              Share Graph
-            </button>
-          </div>
+              {nodes.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <ContextGraph
+                  nodes={nodes}
+                  edges={edges}
+                  onNodeSelect={handleNodeSelect}
+                />
+              )}
+            </div>
+            {selectedNode && (
+              <NodeDetail
+                node={selectedNode}
+                connectionCount={connectionCount}
+                onRoute={handleRoute}
+                onEdit={() => showToast("Update via chat: 'edit memory…'")}
+                onDelete={handleDelete}
+                isRouting={false}
+              />
+            )}
+
+            {!readOnly && nodes.length > 0 && (
+              <div
+                style={{
+                  padding: "8px 16px",
+                  borderTop: "1px solid #1f2430",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <button
+                  onClick={handleShare}
+                  style={{
+                    background: "none",
+                    border: "1px solid #7c6aff40",
+                    borderRadius: "6px",
+                    padding: "4px 12px",
+                    fontSize: "10px",
+                    color: "#7c6aff",
+                    cursor: "pointer",
+                    letterSpacing: "0.3px",
+                  }}
+                >
+                  Share Graph
+                </button>
+              </div>
+            )}
+
+            {showRouting && (
+              <RoutingCard
+                recommended={{
+                  platform: "Claude 3.7 Sonnet",
+                  color: "#d97706",
+                  reason:
+                    "handles SQL migrations with 40% higher accuracy for your established patterns.",
+                  nodeCount: nodes.filter((n) => n.category === "code").length || 3,
+                }}
+                onAccept={handleRoutingAccept}
+                onDismiss={() => setShowRouting(false)}
+              />
+            )}
+          </>
         )}
+
+        {activeTab === "stream" && <LiveStream entries={logEntries} />}
+        {activeTab === "collab" && <Collaborate />}
 
         <Footer
           nodeCount={nodes.length}
@@ -855,20 +1171,6 @@ const ContextGraphWidget: React.FC = () => {
         {toast && <Toast message={toast} />}
         {shareUrl && (
           <ShareOverlay url={shareUrl} onDismiss={() => setShareUrl(null)} />
-        )}
-
-        {showRouting && (
-          <RoutingCard
-            recommended={{
-              platform: "Claude 3.7 Sonnet",
-              color: "#d97706",
-              reason:
-                "handles SQL migrations with 40% higher accuracy for your established patterns.",
-              nodeCount: nodes.filter((n) => n.category === "code").length || 3,
-            }}
-            onAccept={handleRoutingAccept}
-            onDismiss={() => setShowRouting(false)}
-          />
         )}
       </div>
     </McpUseProvider>
