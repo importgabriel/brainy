@@ -5,7 +5,7 @@
  */
 
 import { db } from "../db/client.js";
-import { embedText } from "../db/embed.js";
+import { embedText, classifyRelationships } from "../db/embed.js";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ export async function saveNode(args: SaveNodeArgs): Promise<ContextNode> {
   if (error) throw new Error(`saveNode failed: ${error.message}`);
 
   // Auto-link to related nodes (fire-and-forget, don't block tool response)
-  autoLink(args.userId, (data as ContextNode).id, embedding).catch(console.error);
+  autoLink(args.userId, (data as ContextNode).id, args.content, args.type, embedding).catch(console.error);
 
   return data as ContextNode;
 }
@@ -198,30 +198,45 @@ export async function getContextForTopic(args: GetContextArgs): Promise<ContextR
 
 // ─── Auto-link new node to related nodes (background) ────────
 
-async function autoLink(userId: string, nodeId: string, embedding: number[]) {
-  // Find semantically similar nodes via HNSW (excludes self, uses the vector index)
+async function autoLink(userId: string, nodeId: string, nodeContent: string, nodeType: string, embedding: number[]) {
+  // 1. ANN search for semantically close nodes
   const { data: candidates } = await db.rpc("match_context_nodes", {
     p_user_id:   userId,
     p_embedding: embedding,
-    p_graph_ids: [],   // search all user nodes
-    p_limit:     6,    // +1 because the node itself may appear
+    p_graph_ids: [],
+    p_limit:     6,
   });
 
   if (!candidates?.length) return;
 
-  const related = (candidates as ContextNode[]).filter(n => n.id !== nodeId).slice(0, 5);
-  if (!related.length) return;
+  const pool = (candidates as ContextNode[])
+    .filter(n => n.id !== nodeId)
+    .slice(0, 5);
 
-  const edges = related.map(r => ({
-    user_id:      userId,
-    source_id:    nodeId,
-    target_id:    r.id,
-    relationship: "related_to" as EdgeRelationship,
-    weight:       +(1 - (r as any).distance || 0.8).toFixed(3),
-  }));
+  if (!pool.length) return;
+
+  // 2. LLM classifies the actual relationship type + weight
+  const classified = await classifyRelationships(
+    nodeContent,
+    nodeType,
+    pool.map(n => ({ id: n.id, content: n.content, type: n.type }))
+  );
+
+  // 3. Drop "none" — LLM explicitly said no edge
+  const edges = classified
+    .filter(e => e.relationship !== "none")
+    .map(e => ({
+      user_id:      userId,
+      source_id:    nodeId,
+      target_id:    e.id,
+      relationship: e.relationship,
+      weight:       e.weight,
+    }));
+
+  if (!edges.length) return;
 
   await db.from("context_edges").insert(edges);
-  // ON CONFLICT DO NOTHING handled by UNIQUE(source_id, target_id, relationship)
+  // UNIQUE(source_id, target_id, relationship) handles conflicts
 }
 
 // ─── List nodes for a graph ───────────────────────────────────

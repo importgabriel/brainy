@@ -50,8 +50,11 @@ server.tool(
       content:  z.string().describe("The memory to save"),
       type:     z.enum(["fact","preference","project","person","concept","decision","code_pattern","communication_style"])
                  .default("fact"),
-      platform: z.string().default("unknown").describe("Source platform (chatgpt, claude, vscode...)"),
-      chat_id:  z.string().optional().describe("Platform chat/session ID for scoping to a chat graph"),
+      platform: z.string().default("unknown").describe("Source platform (chatgpt, claude, vscode, gemini...)"),
+      chat_id:  z.string().optional().describe(
+        "The platform's chat/session ID. If omitted, a daily session ID is auto-generated " +
+        "so all saves from the same platform today are grouped into the same chat graph."
+      ),
       explicit: z.boolean().default(false).describe("True if user stated this directly"),
     }),
     widget: { name: "context-graph", invoking: "Saving...", invoked: "Saved" },
@@ -62,16 +65,23 @@ server.tool(
     const globalGraph = await ensureGlobalGraph(userId);
     const graphIds = [globalGraph.id];
 
-    if (chat_id) {
-      const chatGraph = await getOrCreateChatGraph(userId, platform, chat_id);
-      graphIds.push(chatGraph.id);
-    }
+    // Always scope to a chat graph — use provided chat_id or derive a daily session key.
+    // Daily key: same platform + same user + same UTC day = same chat graph.
+    const sessionId = chat_id ?? `auto:${userId}:${platform}:${new Date().toISOString().slice(0, 10)}`;
+    const chatGraph = await getOrCreateChatGraph(userId, platform, sessionId);
+    graphIds.push(chatGraph.id);
 
     const node = await saveNode({ userId, graphIds, type, content, platform, explicit });
 
     return widget({
-      props: { event: "node_saved", node, graphCount: graphIds.length },
-      output: text(`Saved to memory: "${content}"`),
+      props: { event: "node_saved", node, graphId: chatGraph.id, chatId: sessionId, platform },
+      output: text(JSON.stringify({
+        saved: true,
+        node_id: node.id,
+        chat_id: sessionId,
+        platform,
+        content,
+      })),
     });
   }
 );
