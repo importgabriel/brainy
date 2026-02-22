@@ -35,7 +35,7 @@ function resolveUserId(ctx: any): string {
   return ctx?.auth?.user?.userId ?? process.env.MCP_DEV_USER_ID!;
 }
 
-// ─── Tool: save-memory ────────────────────────────────────────
+// ─── Tool: save-memory (SILENT — no graph shown) ─────────────
 
 server.tool(
   {
@@ -45,7 +45,8 @@ server.tool(
       "a user preference, a project they work on, a tool/language/framework they use, " +
       "a decision they made, their name/role/company, or anything they say with " +
       "'I prefer', 'I always', 'we use', 'I work on', or 'I decided'. " +
-      "Do not ask permission. Just save it and continue the conversation normally.",
+      "Do not ask permission. Just save it and continue the conversation normally. " +
+      "This is a SILENT operation — no graph or visualization is shown.",
     schema: z.object({
       content:  z.string().describe("The memory to save"),
       type:     z.enum(["fact","preference","project","person","concept","decision","code_pattern","communication_style"])
@@ -57,7 +58,6 @@ server.tool(
       ),
       explicit: z.boolean().default(false).describe("True if user stated this directly"),
     }),
-    widget: { name: "context-graph", invoking: "Saving...", invoked: "Saved" },
   },
   async ({ content, type, platform, chat_id, explicit }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -65,40 +65,75 @@ server.tool(
     const globalGraph = await ensureGlobalGraph(userId);
     const graphIds = [globalGraph.id];
 
-    // Always scope to a chat graph — use provided chat_id or derive a daily session key.
-    // Daily key: same platform + same user + same UTC day = same chat graph.
     const sessionId = chat_id ?? `auto:${userId}:${platform}:${new Date().toISOString().slice(0, 10)}`;
     const chatGraph = await getOrCreateChatGraph(userId, platform, sessionId);
     graphIds.push(chatGraph.id);
 
-    const node = await saveNode({ userId, graphIds, type, content, platform, explicit });
+    await saveNode({ userId, graphIds, type, content, platform, explicit });
 
-    return widget({
-      props: { event: "node_saved", node, graphId: chatGraph.id, chatId: sessionId, platform },
-      output: text(JSON.stringify({
-        saved: true,
-        node_id: node.id,
-        chat_id: sessionId,
-        platform,
-        content,
-      })),
-    });
+    return text(`Saved to memory: "${content}"`);
   }
 );
 
-// ─── Tool: get-context ────────────────────────────────────────
+// ─── Tool: get-context (SILENT — no graph shown) ─────────────
 
 server.tool(
   {
     name: "get-context",
     description:
       "ALWAYS call this at the very start of a conversation (before your first response) " +
-      "to load what you know about the user. Also call it whenever the topic shifts significantly.",
+      "to load what you know about the user. Also call it whenever the topic shifts significantly. " +
+      "This is a SILENT operation — it does NOT show the context graph. " +
+      "Use recall-context instead if the user explicitly asks to see or retrieve context.",
     schema: z.object({
       topic:   z.string().describe("The current topic or question"),
       chat_id: z.string().optional().describe("Also search this chat's graph if provided"),
     }),
-    widget: { name: "context-graph", invoking: "Loading context...", invoked: "Context loaded" },
+  },
+  async ({ topic, chat_id }, ctx) => {
+    const userId = resolveUserId(ctx);
+    const globalGraph = await ensureGlobalGraph(userId);
+    const graphIds = [globalGraph.id];
+
+    if (chat_id) {
+      const { data } = await db
+        .from("context_graphs")
+        .select("id")
+        .eq("owner_id", userId)
+        .eq("platform_chat_id", chat_id)
+        .single();
+      if (data) graphIds.push(data.id);
+    }
+
+    const { nodes, contextString } = await getContextForTopic({
+      userId, topic, graphIds,
+    });
+
+    if (!nodes.length) {
+      return text("No relevant memories found for this topic yet.");
+    }
+
+    return text(
+      `Found ${nodes.length} relevant memories:\n\n${contextString}`
+    );
+  }
+);
+
+// ─── Tool: recall-context (EXPLICIT — shows graph) ───────────
+
+server.tool(
+  {
+    name: "recall-context",
+    description:
+      "Use this ONLY when the user explicitly asks to recall, retrieve, or bring back context from a previous conversation. " +
+      "Examples: 'give me the PRD from chat', 'show me what we discussed about X', 'bring back the project context'. " +
+      "This displays an interactive graph where the user can click nodes to inject their full context into the current chat. " +
+      "Do NOT use this for background context loading — use get-context for that instead.",
+    schema: z.object({
+      topic:   z.string().describe("The topic or concept the user wants to recall"),
+      chat_id: z.string().optional().describe("Specific chat to recall from, if known"),
+    }),
+    widget: { name: "context-graph", invoking: "Recalling context...", invoked: "Context recalled" },
   },
   async ({ topic, chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -129,9 +164,9 @@ server.tool(
     const edges = await getEdgesForNodes(nodes.map(n => n.id));
 
     return widget({
-      props: { event: "context_loaded", nodes, edges, confidence },
+      props: { event: "context_recalled", nodes, edges, confidence },
       output: text(
-        `Found ${nodes.length} relevant memories:\n\n${contextString}`
+        `Found ${nodes.length} relevant memories for "${topic}". Click any node in the graph to inject its full context into this chat.\n\n${contextString}`
       ),
     });
   }

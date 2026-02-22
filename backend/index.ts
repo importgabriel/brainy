@@ -25,12 +25,20 @@ PROACTIVE MEMORY EXTRACTION:
 - When the user shares personal facts, preferences, technical details, project context, or decisions, IMMEDIATELY call save-memory to store them
 - Extract ONE atomic fact per save-memory call
 - Do NOT ask permission to save — just do it silently
-- After saving, the user's context graph widget will update automatically
+- Memory saving is silent — no graph or visualization is shown
 
-CONTEXT RETRIEVAL:
+CONTEXT RETRIEVAL (BACKGROUND — NO GRAPH):
 - When the user asks a question that might benefit from stored context, call get-context with the relevant topic
 - The returned context string contains their stored memories — use it to give personalized answers
 - Reference specific memories naturally: "Based on your TypeScript preference..." not "Based on my database..."
+- get-context is a SILENT operation — it does NOT show the graph visualization
+
+CONTEXT RECALL (EXPLICIT — SHOWS GRAPH):
+- ONLY call recall-context when the user EXPLICITLY asks to bring back, recall, or retrieve context from a previous chat
+- Examples that trigger recall-context: "give me the PRD from chat", "show me what we discussed about the architecture", "bring back the project plan", "recall the design decisions"
+- This shows an interactive graph where the user can click on specific nodes to inject their full context
+- Each node displays a concise label but contains the complete knowledge behind it
+- Do NOT call recall-context for background context loading — use get-context instead
 
 ROUTING:
 - When the user's task would be better suited to a different AI platform, mention it naturally
@@ -39,7 +47,8 @@ ROUTING:
 BEHAVIOR:
 - Never mention "SwitchMemory" by name unless the user asks about it
 - Treat stored context as things you naturally know about the user
-- If memories conflict, prefer the most recent one`;
+- If memories conflict, prefer the most recent one
+- The context graph should NEVER appear unless the user explicitly requests it`;
 
 const server = new MCPServer({
   name: "brain",
@@ -66,6 +75,7 @@ server.tool(
     name: "save-memory",
     description:
       "Store important context from this conversation into the user's universal memory graph. " +
+      "This is a SILENT operation — no graph or visualization is shown. " +
       "You MUST call this tool proactively whenever the user reveals: " +
       "- Personal facts (name, role, company, location, education) " +
       "- Technical preferences (languages, frameworks, tools, editors) " +
@@ -79,7 +89,7 @@ server.tool(
       "- Set confidence: 1.0 for explicit statements ('I use TypeScript'), 0.75 for inferred ('seems to prefer...') " +
       "- Do NOT ask permission — just save silently " +
       "- Do NOT save trivial greetings or small talk " +
-      "- After saving, the widget graph will update automatically",
+      "- This tool does NOT show the context graph — saving is invisible to the user",
     schema: z.object({
       content:  z.string().describe("One atomic fact to save — a single clear statement, not a paragraph"),
       type:     z.enum(["fact","preference","project","person","concept","decision","code_pattern","communication_style"])
@@ -90,7 +100,6 @@ server.tool(
       chat_id:  z.string().optional().describe("Platform chat/session ID for scoping to a chat graph"),
       explicit: z.boolean().default(false).describe("True if user stated this directly"),
     }),
-    widget: { name: "context-graph", invoking: "Saving...", invoked: "Saved" },
   },
   async ({ content, type, platform, chat_id, explicit }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -103,13 +112,9 @@ server.tool(
       graphIds.push(chatGraph.id);
     }
 
-    const node = await saveNode({ userId, graphIds, type, content, platform, explicit });
-    const edges = await getEdgesForNodes([node.id]);
+    await saveNode({ userId, graphIds, type, content, platform, explicit });
 
-    return widget({
-      props: { event: "node_saved", node, edges, graphCount: graphIds.length },
-      output: text(`Saved to memory: "${content}"`),
-    });
+    return text(`Saved to memory: "${content}"`);
   }
 );
 
@@ -122,12 +127,58 @@ server.tool(
     description:
       "ALWAYS call this at the very start of a conversation (before your first response) " +
       "to load what you know about the user. Also call it whenever the topic shifts significantly. " +
-      "This gives you persistent context so you never ask the user to re-explain themselves.",
+      "This is a SILENT operation — it does NOT show the context graph. " +
+      "Use recall-context instead if the user explicitly asks to see or retrieve context.",
     schema: z.object({
       topic:   z.string().describe("The current topic or question"),
       chat_id: z.string().optional().describe("Also search this chat's graph if provided"),
     }),
-    widget: { name: "context-graph", invoking: "Loading context...", invoked: "Context loaded" },
+  },
+  async ({ topic, chat_id }, ctx) => {
+    const userId = resolveUserId(ctx);
+    const globalGraph = await ensureGlobalGraph(userId);
+    const graphIds = [globalGraph.id];
+
+    if (chat_id) {
+      const { data } = await (await import("./src/db/client.js")).db
+        .from("context_graphs")
+        .select("id")
+        .eq("owner_id", userId)
+        .eq("platform_chat_id", chat_id)
+        .single();
+      if (data) graphIds.push(data.id);
+    }
+
+    const { nodes, contextString, confidence } = await getContextForTopic({
+      userId, topic, graphIds,
+    });
+
+    if (!nodes.length) {
+      return text("No relevant memories found for this topic yet.");
+    }
+
+    return text(
+      `Found ${nodes.length} relevant memories:\n\n${contextString}`
+    );
+  }
+);
+
+// ─── Tool: recall_context ─────────────────────────────────────
+// User explicitly asks to recall / bring back context → shows interactive graph
+
+server.tool(
+  {
+    name: "recall-context",
+    description:
+      "Use this ONLY when the user explicitly asks to recall, retrieve, or bring back context from a previous conversation. " +
+      "Examples: 'give me the PRD from chat', 'show me what we discussed about X', 'bring back the project context'. " +
+      "This displays an interactive graph where the user can click nodes to inject their full context into the current chat. " +
+      "Do NOT use this for background context loading — use get-context for that instead.",
+    schema: z.object({
+      topic:   z.string().describe("The topic or concept the user wants to recall"),
+      chat_id: z.string().optional().describe("Specific chat to recall from, if known"),
+    }),
+    widget: { name: "context-graph", invoking: "Recalling context...", invoked: "Context recalled" },
   },
   async ({ topic, chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
@@ -158,9 +209,9 @@ server.tool(
     const edges = await getEdgesForNodes(nodes.map(n => n.id));
 
     return widget({
-      props: { event: "context_loaded", nodes, edges, confidence },
+      props: { event: "context_recalled", nodes, edges, confidence },
       output: text(
-        `Found ${nodes.length} relevant memories:\n\n${contextString}`
+        `Found ${nodes.length} relevant memories for "${topic}". Click any node in the graph to inject its full context into this chat.\n\n${contextString}`
       ),
     });
   }
@@ -352,7 +403,7 @@ server.prompt(
 
 AUTOMATIC BEHAVIOR — follow these rules without being asked:
 
-1. CONVERSATION START: Call get-context with the opening topic to retrieve relevant memories before responding. If the user's first message contains a topic, call it immediately.
+1. CONVERSATION START: Call get-context (NOT recall-context) with the opening topic to retrieve relevant memories before responding. This is a silent operation — no graph is shown.
 
 2. SAVE ON LEARN: Call save-memory whenever you learn ANY of the following:
    - A fact about the user (name, role, location, employer, team)
@@ -362,13 +413,17 @@ AUTOMATIC BEHAVIOR — follow these rules without being asked:
    - A code pattern or convention the user uses
    - Anything the user says "I always...", "I prefer...", "We use...", "I work on..."
 
-3. TOPIC SHIFT: When the conversation topic changes significantly, call get-context with the new topic.
+3. TOPIC SHIFT: When the conversation topic changes significantly, call get-context (NOT recall-context) with the new topic.
 
 4. NEVER ask the user "should I save this?" — just save it silently and continue.
 
 5. NEVER say "I've saved X to memory" unless the user asks about memory. Do it invisibly.
 
-The goal: every AI session this user starts, anywhere, already knows who they are and what they're working on.`,
+6. EXPLICIT RECALL ONLY: Call recall-context ONLY when the user explicitly asks to bring back context from a previous conversation (e.g. "give me the PRD from chat", "what did we discuss about X", "bring back the architecture notes"). This shows an interactive graph where users can click nodes to inject full context into the current chat.
+
+7. NEVER show the context graph proactively. The graph only appears when the user explicitly requests it.
+
+The goal: every AI session this user starts, anywhere, already knows who they are and what they're working on — silently, without showing any graph.`,
         },
       },
     ],

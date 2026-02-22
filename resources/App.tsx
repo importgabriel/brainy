@@ -6,18 +6,18 @@ import RoutingCard from "./components/RoutingCard";
 import type { ContextGraphNode, ContextGraphEdge } from "./components/ContextGraph";
 
 const nodes: ContextGraphNode[] = [
-  { id: "nextjs", label: "Next.js", category: "project", source: "claude", x: 350, y: 80, confidence: 0.95 },
-  { id: "typescript", label: "TypeScript", category: "project", source: "chatgpt", x: 200, y: 130, confidence: 0.9 },
-  { id: "supabase", label: "Supabase", category: "project", source: "claude", x: 500, y: 130, confidence: 0.85 },
-  { id: "pgvector", label: "pgvector", category: "code", source: "chatgpt", x: 600, y: 220, confidence: 0.7 },
-  { id: "ceo", label: "CEO Role", category: "fact", source: "claude", x: 100, y: 250, confidence: 0.8 },
-  { id: "preseed", label: "Pre-seed Raise", category: "decision", source: "perplexity", x: 250, y: 320, confidence: 0.75 },
-  { id: "uga", label: "UGA Target", category: "fact", source: "gemini", x: 400, y: 380, confidence: 0.6 },
-  { id: "kayak", label: "Kayak for AI", category: "project", source: "chatgpt", x: 150, y: 380, confidence: 0.85 },
-  { id: "darktheme", label: "Dark Theme Pref", category: "preference", source: "claude", x: 550, y: 320, confidence: 0.65 },
-  { id: "concise", label: "Concise Pref", category: "preference", source: "chatgpt", x: 450, y: 250, confidence: 0.6 },
-  { id: "gpt4mini", label: "GPT-4.1 Mini Router", category: "code", source: "chatgpt", x: 300, y: 200, confidence: 0.8 },
-  { id: "starter", label: "$14.99 Starter Tier", category: "decision", source: "perplexity", x: 100, y: 130, confidence: 0.7 },
+  { id: "nextjs", label: "Next.js", fullContent: "Building the main application with Next.js framework for server-side rendering and API routes", category: "project", source: "claude", x: 350, y: 80, confidence: 0.95 },
+  { id: "typescript", label: "TypeScript", fullContent: "Using TypeScript as the primary language across the entire codebase with strict mode enabled", category: "project", source: "chatgpt", x: 200, y: 130, confidence: 0.9 },
+  { id: "supabase", label: "Supabase", fullContent: "Supabase is the backend database with PostgreSQL, row-level security, and real-time subscriptions", category: "project", source: "claude", x: 500, y: 130, confidence: 0.85 },
+  { id: "pgvector", label: "pgvector", fullContent: "Using pgvector extension for semantic similarity search with 1536-dimension embeddings from OpenAI", category: "code", source: "chatgpt", x: 600, y: 220, confidence: 0.7 },
+  { id: "ceo", label: "CEO Role", fullContent: "User is CEO of a startup building an AI-powered travel planning platform", category: "fact", source: "claude", x: 100, y: 250, confidence: 0.8 },
+  { id: "preseed", label: "Pre-seed Raise", fullContent: "Decided on pre-seed fundraising round, targeting $500K-$1M from angel investors", category: "decision", source: "perplexity", x: 250, y: 320, confidence: 0.75 },
+  { id: "uga", label: "UGA Target", fullContent: "Targeting University of Georgia students as initial user base for the travel planner", category: "fact", source: "gemini", x: 400, y: 380, confidence: 0.6 },
+  { id: "kayak", label: "Kayak for AI", fullContent: "The product vision is 'Kayak for AI' — a meta-search engine that routes AI tasks to the best model", category: "project", source: "chatgpt", x: 150, y: 380, confidence: 0.85 },
+  { id: "darktheme", label: "Dark Theme Pref", fullContent: "User prefers dark theme across all applications and development environments", category: "preference", source: "claude", x: 550, y: 320, confidence: 0.65 },
+  { id: "concise", label: "Concise Pref", fullContent: "User prefers concise, direct communication without unnecessary verbosity", category: "preference", source: "chatgpt", x: 450, y: 250, confidence: 0.6 },
+  { id: "gpt4mini", label: "GPT-4.1 Mini Router", fullContent: "Using GPT-4.1 Mini for the routing classification layer to determine which AI model handles each task", category: "code", source: "chatgpt", x: 300, y: 200, confidence: 0.8 },
+  { id: "starter", label: "$14.99 Starter Tier", fullContent: "Decided on $14.99/month as the starter pricing tier for the product", category: "decision", source: "perplexity", x: 100, y: 130, confidence: 0.7 },
 ];
 
 const edges: ContextGraphEdge[] = [
