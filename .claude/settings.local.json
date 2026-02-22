@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cd /c/Users/legot/TATTVA/Brainium/brainy/backend && npm run build 2>&1)",
+      "Bash(cd /c/Users/legot/TATTVA/Brainium/brainy/backend && ./node_modules/.bin/mcp-use build 2>&1)",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell.exe:*)"
+    ]
+  }
+}

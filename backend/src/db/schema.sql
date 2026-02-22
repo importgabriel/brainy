@@ -53,11 +53,14 @@ CREATE INDEX IF NOT EXISTS context_nodes_user_active_idx
 -- ─── Node ↔ Graph membership (many-to-many) ─────────────────
 -- A node can belong to: global graph, a project graph, multiple chat graphs.
 -- This is what makes the subgraph model work.
+-- NOTE: id column is required — Supabase Realtime triggers access NEW.id
+-- and will throw "record new has no field id" without it.
 CREATE TABLE IF NOT EXISTS node_graph_memberships (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   node_id    UUID NOT NULL REFERENCES context_nodes(id) ON DELETE CASCADE,
   graph_id   UUID NOT NULL REFERENCES context_graphs(id) ON DELETE CASCADE,
   added_at   TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (node_id, graph_id)
+  UNIQUE (node_id, graph_id)
 );
 
 CREATE INDEX IF NOT EXISTS memberships_graph_idx ON node_graph_memberships (graph_id);
@@ -122,10 +125,12 @@ CREATE POLICY "users_see_own_shares" ON graph_shares
   USING (shared_by = auth.uid() OR shared_with_user = auth.uid());
 
 -- ─── Atomic upsert: dedup-safe concurrent write ───────────────
--- Checks for near-duplicate before inserting. Single transaction = safe under concurrency.
+-- HNSW-correct: threshold check is done in PL/pgSQL AFTER the ANN search,
+-- not in the SQL WHERE clause. A distance filter in WHERE forces a sequential
+-- scan and bypasses the HNSW index entirely.
 CREATE OR REPLACE FUNCTION upsert_context_node(
   p_user_id     UUID,
-  p_graph_ids   UUID[],        -- tag to all these graphs on insert
+  p_graph_ids   UUID[],
   p_type        TEXT,
   p_content     TEXT,
   p_embedding   vector(1536),
@@ -141,18 +146,22 @@ DECLARE
   existing_node context_nodes;
   result_node   context_nodes;
   gid           UUID;
+  similarity    FLOAT;
 BEGIN
-  -- Check for near-duplicate in this user's node pool
+  -- ANN search first (HNSW index used), threshold checked in PL/pgSQL
   SELECT n.* INTO existing_node
   FROM context_nodes n
   WHERE n.user_id = p_user_id
     AND n.is_active = TRUE
-    AND 1 - (n.embedding <=> p_embedding) > p_threshold
   ORDER BY n.embedding <=> p_embedding
   LIMIT 1;
 
   IF FOUND THEN
-    -- Duplicate: bump confidence and recency
+    similarity := 1 - (existing_node.embedding <=> p_embedding);
+  END IF;
+
+  IF FOUND AND similarity > p_threshold THEN
+    -- Near-duplicate: bump confidence and recency
     UPDATE context_nodes
     SET
       confidence    = LEAST(existing_node.confidence + 0.05, 1.0),
@@ -160,13 +169,13 @@ BEGIN
     WHERE id = existing_node.id
     RETURNING * INTO result_node;
   ELSE
-    -- New node: insert into universal pool
+    -- New node
     INSERT INTO context_nodes (user_id, type, content, embedding, confidence, source_platform, metadata)
     VALUES (p_user_id, p_type, p_content, p_embedding, p_confidence, p_platform, p_metadata)
     RETURNING * INTO result_node;
   END IF;
 
-  -- Tag node to all requested graphs (idempotent)
+  -- Tag to all requested graphs (idempotent)
   FOREACH gid IN ARRAY p_graph_ids LOOP
     INSERT INTO node_graph_memberships (node_id, graph_id)
     VALUES (result_node.id, gid)
@@ -176,6 +185,15 @@ BEGIN
   RETURN result_node;
 END;
 $$;
+
+-- ─── Partial unique index: one global graph per user ─────────
+-- The existing UNIQUE(owner_id, platform_chat_id) doesn't help when
+-- platform_chat_id IS NULL (NULLs are never equal in SQL). This index
+-- enforces one-and-only-one global graph per user.
+-- NOTE: Run the dedup migration first (see bottom) before creating this index.
+CREATE UNIQUE INDEX IF NOT EXISTS context_graphs_global_user_unique
+  ON context_graphs (owner_id)
+  WHERE type = 'global';
 
 -- ─── Get or create user's global graph ───────────────────────
 CREATE OR REPLACE FUNCTION ensure_global_graph(p_user_id UUID)
@@ -187,7 +205,7 @@ DECLARE
 BEGIN
   INSERT INTO context_graphs (owner_id, name, type)
   VALUES (p_user_id, 'Global', 'global')
-  ON CONFLICT DO NOTHING;
+  ON CONFLICT (owner_id) WHERE type = 'global' DO NOTHING;
 
   SELECT * INTO g
   FROM context_graphs
@@ -197,3 +215,74 @@ BEGIN
   RETURN g;
 END;
 $$;
+
+-- ─── Vector similarity search RPC ────────────────────────────
+-- ANN-first pattern: run the HNSW search with only simple equality filters
+-- (user_id, is_active) so the index is actually used, then apply the graph
+-- membership filter in a CTE after the ANN candidates are already fetched.
+-- The inner LIMIT oversamples (10x) to ensure enough candidates survive the filter.
+CREATE OR REPLACE FUNCTION match_context_nodes(
+  p_user_id   UUID,
+  p_embedding vector(1536),
+  p_graph_ids UUID[],
+  p_limit     INT DEFAULT 4
+)
+RETURNS SETOF context_nodes
+LANGUAGE sql
+STABLE
+AS $$
+  WITH ann AS (
+    SELECT n.*
+    FROM context_nodes n
+    WHERE n.user_id = p_user_id
+      AND n.is_active = TRUE
+    ORDER BY n.embedding <=> p_embedding
+    LIMIT p_limit * 10
+  )
+  SELECT *
+  FROM ann
+  WHERE (
+    cardinality(p_graph_ids) = 0
+    OR id IN (
+      SELECT node_id FROM node_graph_memberships
+      WHERE graph_id = ANY(p_graph_ids)
+    )
+  )
+  LIMIT p_limit;
+$$;
+
+-- ============================================================
+-- MIGRATION — run this block once in Supabase SQL Editor
+-- (run the full schema above for a fresh DB, only this for existing)
+-- ============================================================
+
+-- Step 1: Add id column to node_graph_memberships if missing
+-- (Supabase Realtime triggers need NEW.id, causing "record new has no field id")
+ALTER TABLE node_graph_memberships
+  ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid();
+
+-- Step 2: Deduplicate global graphs before creating unique index
+-- Keeps the oldest global graph per user (earliest created_at), removes extras
+WITH keep AS (
+  SELECT DISTINCT ON (owner_id) id AS id_to_keep
+  FROM context_graphs
+  WHERE type = 'global'
+  ORDER BY owner_id, created_at ASC, id
+)
+DELETE FROM context_graphs cg
+USING keep
+WHERE cg.type = 'global'
+  AND cg.id <> keep.id_to_keep;
+
+-- Step 3: Now it's safe to create the partial unique index
+CREATE UNIQUE INDEX IF NOT EXISTS context_graphs_global_user_unique
+  ON context_graphs (owner_id)
+  WHERE type = 'global';
+
+-- Step 4: Replace functions with HNSW-correct versions
+-- (upsert_context_node and match_context_nodes above replace themselves via
+-- CREATE OR REPLACE — just run the full file or paste those two functions)
+
+-- Step 5: Update hnsw ef_search for better recall at query time
+-- (optional but recommended: higher = better recall, slightly slower)
+ALTER DATABASE postgres SET hnsw.ef_search = 40;

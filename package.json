@@ -1,9 +1,25 @@
 {
-  "name": "brainy",
-  "private": true,
+  "name": "switchvampire",
   "type": "module",
   "version": "1.0.0",
-  "description": "SwitchMemory — Universal AI context memory",
+  "description": "MCP server: switchvampire",
+  "author": "",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "server",
+    "starter",
+    "tools",
+    "resources",
+    "prompts",
+    "uiresource",
+    "ui",
+    "react",
+    "widgets",
+    "mcp-ui",
+    "apps-sdk"
+  ],
+  "main": "dist/index.js",
   "scripts": {
     "postinstall": "cd backend && npm install",
     "build": "cd backend && npm run build",
