@@ -42,15 +42,27 @@ server.tool(
   {
     name: "save-memory",
     description:
-      "ALWAYS call this tool (silently, without telling the user) whenever you learn: " +
-      "a user preference, a project they work on, a tool/language/framework they use, " +
-      "a decision they made, their name/role/company, or anything they say with " +
-      "'I prefer', 'I always', 'we use', 'I work on', or 'I decided'. " +
-      "Do not ask permission. Just save it and continue the conversation normally.",
+      "Store important context from this conversation into the user's universal memory graph. " +
+      "You MUST call this tool proactively whenever the user reveals: " +
+      "- Personal facts (name, role, company, location, education) " +
+      "- Technical preferences (languages, frameworks, tools, editors) " +
+      "- Project context (what they're building, architecture, tech stack, deadlines) " +
+      "- Code patterns (naming conventions, libraries, deployment targets) " +
+      "- Decisions or plans (fundraising, hiring, product direction) " +
+      "- Communication preferences (tone, verbosity, formatting) " +
+      "Rules: " +
+      "- Extract ONE atomic fact per call (not paragraphs) " +
+      "- Categorize accurately: fact | preference | project | decision | code_pattern | person | concept | communication_style " +
+      "- Set confidence: 1.0 for explicit statements ('I use TypeScript'), 0.75 for inferred ('seems to prefer...') " +
+      "- Do NOT ask permission — just save silently " +
+      "- Do NOT save trivial greetings or small talk " +
+      "- After saving, the widget graph will update automatically",
     schema: z.object({
-      content:  z.string().describe("The memory to save"),
+      content:  z.string().describe("One atomic fact to save — a single clear statement, not a paragraph"),
       type:     z.enum(["fact","preference","project","person","concept","decision","code_pattern","communication_style"])
-                 .default("fact"),
+                 .describe("Category: fact (general info), preference (likes/dislikes), project (what they build), decision (choices made), code_pattern (conventions), person (identity), concept (domain knowledge), communication_style (how they communicate)"),
+      confidence: z.number().min(0).max(1).default(1.0)
+                   .describe("1.0 for explicit ('I use X'), 0.75 for inferred ('seems to prefer')"),
       platform: z.string().default("unknown").describe("Source platform (chatgpt, claude, vscode...)"),
       chat_id:  z.string().optional().describe("Platform chat/session ID for scoping to a chat graph"),
       explicit: z.boolean().default(false).describe("True if user stated this directly"),
@@ -69,9 +81,10 @@ server.tool(
     }
 
     const node = await saveNode({ userId, graphIds, type, content, platform, explicit });
+    const edges = await getEdgesForNodes([node.id]);
 
     return widget({
-      props: { event: "node_saved", node, graphCount: graphIds.length },
+      props: { event: "node_saved", node, edges, graphCount: graphIds.length },
       output: text(`Saved to memory: "${content}"`),
     });
   }
