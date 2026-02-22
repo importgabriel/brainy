@@ -63,11 +63,12 @@ server.tool(
     const userId = resolveUserId(ctx);
 
     const globalGraph = await ensureGlobalGraph(userId);
-    const graphIds = [globalGraph.id];
+    if (!globalGraph?.id) throw new Error("Failed to resolve global graph");
+    const graphIds: string[] = [globalGraph.id];
 
     const sessionId = chat_id ?? `auto:${userId}:${platform}:${new Date().toISOString().slice(0, 10)}`;
     const chatGraph = await getOrCreateChatGraph(userId, platform, sessionId);
-    graphIds.push(chatGraph.id);
+    if (chatGraph?.id) graphIds.push(chatGraph.id);
 
     await saveNode({ userId, graphIds, type, content, platform, explicit });
 
@@ -93,7 +94,8 @@ server.tool(
   async ({ topic, chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
     const globalGraph = await ensureGlobalGraph(userId);
-    const graphIds = [globalGraph.id];
+    if (!globalGraph?.id) throw new Error("Failed to resolve global graph");
+    const graphIds: string[] = [globalGraph.id];
 
     if (chat_id) {
       const { data } = await db
@@ -102,7 +104,7 @@ server.tool(
         .eq("owner_id", userId)
         .eq("platform_chat_id", chat_id)
         .single();
-      if (data) graphIds.push(data.id);
+      if (data?.id) graphIds.push(data.id);
     }
 
     const { nodes, contextString } = await getContextForTopic({
@@ -138,7 +140,8 @@ server.tool(
   async ({ topic, chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
     const globalGraph = await ensureGlobalGraph(userId);
-    const graphIds = [globalGraph.id];
+    if (!globalGraph?.id) throw new Error("Failed to resolve global graph");
+    const graphIds: string[] = [globalGraph.id];
 
     if (chat_id) {
       const { data } = await db
@@ -147,7 +150,7 @@ server.tool(
         .eq("owner_id", userId)
         .eq("platform_chat_id", chat_id)
         .single();
-      if (data) graphIds.push(data.id);
+      if (data?.id) graphIds.push(data.id);
     }
 
     const { nodes, contextString, confidence } = await getContextForTopic({
@@ -186,6 +189,7 @@ server.tool(
   async ({ chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
     const globalGraph = await ensureGlobalGraph(userId);
+    if (!globalGraph?.id) throw new Error("Failed to resolve global graph");
     let graphId = globalGraph.id;
 
     if (chat_id) {
@@ -195,7 +199,7 @@ server.tool(
         .eq("owner_id", userId)
         .eq("platform_chat_id", chat_id)
         .single();
-      if (data) graphId = data.id;
+      if (data?.id) graphId = data.id;
     }
 
     const nodes = await listGraphNodes(userId, graphId);
@@ -226,6 +230,7 @@ server.tool(
   async ({ chat_id }, ctx) => {
     const userId = resolveUserId(ctx);
     const globalGraph = await ensureGlobalGraph(userId);
+    if (!globalGraph?.id) throw new Error("Failed to resolve global graph");
     let graphId = globalGraph.id;
 
     if (chat_id) {
@@ -235,7 +240,7 @@ server.tool(
         .eq("owner_id", userId)
         .eq("platform_chat_id", chat_id)
         .single();
-      if (data) graphId = data.id;
+      if (data?.id) graphId = data.id;
     }
 
     const nodes = await listGraphNodes(userId, graphId);

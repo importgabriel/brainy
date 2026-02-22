@@ -50,7 +50,24 @@ export interface ShareResult {
 export async function ensureGlobalGraph(userId: string): Promise<ContextGraph> {
   const { data, error } = await db.rpc("ensure_global_graph", { p_user_id: userId });
   if (error) throw new Error(`ensure_global_graph failed: ${error.message}`);
-  return data as ContextGraph;
+
+  // Supabase RPC for functions returning a composite row can return:
+  //   - a single object (expected)
+  //   - an array with one element
+  //   - null (race condition / RLS issue)
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || !row.id) {
+    // Fallback: query directly instead of relying on RPC return shape
+    const { data: fallback, error: fbErr } = await db
+      .from("context_graphs")
+      .select()
+      .eq("owner_id", userId)
+      .eq("type", "global")
+      .single();
+    if (fbErr || !fallback) throw new Error(`ensure_global_graph: no global graph found for user ${userId}`);
+    return fallback as ContextGraph;
+  }
+  return row as ContextGraph;
 }
 
 export async function getOrCreateChatGraph(
@@ -66,7 +83,7 @@ export async function getOrCreateChatGraph(
     .eq("platform_chat_id", platformChatId)
     .single();
 
-  if (existing) return existing as ContextGraph;
+  if (existing?.id) return existing as ContextGraph;
 
   const { data, error } = await db
     .from("context_graphs")
@@ -81,6 +98,7 @@ export async function getOrCreateChatGraph(
     .single();
 
   if (error) throw new Error(`create chat graph failed: ${error.message}`);
+  if (!data?.id) throw new Error(`create chat graph returned no data`);
   return data as ContextGraph;
 }
 
@@ -97,12 +115,18 @@ export interface SaveNodeArgs {
 }
 
 export async function saveNode(args: SaveNodeArgs): Promise<ContextNode> {
+  // Filter out any undefined/null graph IDs to prevent SQL iterator crash
+  const validGraphIds = args.graphIds.filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (!validGraphIds.length) {
+    throw new Error("saveNode: no valid graph IDs provided — cannot save without at least one graph");
+  }
+
   const embedding = await embedText(args.content);
   const confidence = args.explicit ? 1.0 : 0.75;
 
   const { data, error } = await db.rpc("upsert_context_node", {
     p_user_id:    args.userId,
-    p_graph_ids:  args.graphIds,
+    p_graph_ids:  validGraphIds,
     p_type:       args.type,
     p_content:    args.content,
     p_embedding:  embedding,
@@ -113,10 +137,14 @@ export async function saveNode(args: SaveNodeArgs): Promise<ContextNode> {
 
   if (error) throw new Error(`saveNode failed: ${error.message}`);
 
-  // Auto-link to related nodes (fire-and-forget, don't block tool response)
-  autoLink(args.userId, (data as ContextNode).id, args.content, args.type, embedding).catch(console.error);
+  // Supabase RPC for composite returns can be array or object
+  const node = Array.isArray(data) ? data[0] : data;
+  if (!node?.id) throw new Error("saveNode: RPC returned no node");
 
-  return data as ContextNode;
+  // Auto-link to related nodes (fire-and-forget, don't block tool response)
+  autoLink(args.userId, (node as ContextNode).id, args.content, args.type, embedding).catch(console.error);
+
+  return node as ContextNode;
 }
 
 // ─── Semantic search + 1-hop graph traversal ─────────────────
