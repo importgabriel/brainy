@@ -99,10 +99,7 @@ function mapNodeType(type: string): ContextGraphNode["category"] {
 function mapPlatform(platform: string | null): ContextGraphNode["source"] {
   if (!platform) return "chatgpt";
   const p = platform.toLowerCase();
-  if (p.includes("chatgpt") || p.includes("openai")) return "chatgpt";
   if (p.includes("claude") || p.includes("anthropic")) return "claude";
-  if (p.includes("gemini") || p.includes("google")) return "gemini";
-  if (p.includes("perplexity")) return "perplexity";
   return "chatgpt";
 }
 
@@ -181,6 +178,32 @@ function buildEdgesFallback(nodes: ContextGraphNode[]): ContextGraphEdge[] {
 
   return edges;
 }
+
+/* ── Demo / fallback data ─────────────────────────────── */
+
+const DEMO_NODES = [
+  { content: "React 19", type: "code_pattern", source_platform: "chatgpt", confidence: 0.88 },
+  { content: "Series A Plan", type: "decision", source_platform: "claude", confidence: 0.72 },
+  { content: "Vercel Deploy", type: "project", source_platform: "claude", confidence: 0.91 },
+  { content: "Vim Preference", type: "preference", source_platform: "chatgpt", confidence: 0.55 },
+  { content: "Mistral Embed", type: "code_pattern", source_platform: "chatgpt", confidence: 0.83 },
+  { content: "YC Application", type: "decision", source_platform: "claude", confidence: 0.95 },
+];
+
+const SEED_NODES: ContextGraphNode[] = [
+  { id: "nextjs", label: "Next.js", category: "project", source: "claude", x: 350, y: 80, confidence: 0.95 },
+  { id: "typescript", label: "TypeScript", category: "project", source: "chatgpt", x: 200, y: 130, confidence: 0.9 },
+  { id: "supabase", label: "Supabase", category: "project", source: "claude", x: 500, y: 130, confidence: 0.85 },
+  { id: "pgvector", label: "pgvector", category: "code", source: "chatgpt", x: 600, y: 220, confidence: 0.7 },
+  { id: "ceo", label: "CEO Role", category: "fact", source: "claude", x: 100, y: 250, confidence: 0.8 },
+  { id: "preseed", label: "Pre-seed Raise", category: "decision", source: "chatgpt", x: 250, y: 320, confidence: 0.75 },
+  { id: "uga", label: "UGA Target", category: "fact", source: "claude", x: 400, y: 380, confidence: 0.6 },
+  { id: "kayak", label: "Kayak for AI", category: "project", source: "chatgpt", x: 150, y: 380, confidence: 0.85 },
+  { id: "darktheme", label: "Dark Theme Pref", category: "preference", source: "claude", x: 550, y: 320, confidence: 0.65 },
+  { id: "concise", label: "Concise Pref", category: "preference", source: "chatgpt", x: 450, y: 250, confidence: 0.6 },
+  { id: "gpt4mini", label: "GPT-4.1 Mini Router", category: "code", source: "chatgpt", x: 300, y: 200, confidence: 0.8 },
+  { id: "starter", label: "$14.99 Starter Tier", category: "decision", source: "claude", x: 100, y: 130, confidence: 0.7 },
+];
 
 /* ── Display mode button ────────────────────────────── */
 
@@ -338,8 +361,6 @@ const Header: React.FC<{
 const PLATFORMS = [
   { name: "ChatGPT", key: "chatgpt" as const, color: "#10a37f" },
   { name: "Claude",  key: "claude"  as const, color: "#d97706" },
-  { name: "Gemini",  key: "gemini"  as const, color: "#4285f4" },
-  { name: "Perplexity", key: "perplexity" as const, color: "#8b5cf6" },
 ];
 
 const Footer: React.FC<{
@@ -824,6 +845,8 @@ const ContextGraphWidget: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>("graph");
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [demoIndex, setDemoIndex] = useState(0);
+  const seeded = useRef(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -856,6 +879,17 @@ const ContextGraphWidget: React.FC = () => {
     };
     setLogEntries((prev) => [entry, ...prev]);
   }, []);
+
+  /* ── Demo fallback: seed graph if empty on first render ── */
+
+  useEffect(() => {
+    if (seeded.current) return;
+    if (!isPending && nodes.length === 0 && !props?.event) {
+      seeded.current = true;
+      setNodes(SEED_NODES);
+      setEdges(buildEdgesFallback(SEED_NODES));
+    }
+  }, [isPending, nodes.length, props?.event]);
 
   /* ── Handle backend events ─────────────────────────── */
 
@@ -1027,6 +1061,36 @@ const ContextGraphWidget: React.FC = () => {
     );
   }, [sendFollowUpMessage, pushLog]);
 
+  /* ── Demo: simulate extraction ──────────────────────── */
+
+  const handleSimulateExtraction = useCallback(() => {
+    const demo = DEMO_NODES[demoIndex % DEMO_NODES.length];
+    const id = `demo-${Date.now()}`;
+    const graphNode = toGraphNode({
+      id,
+      user_id: "demo",
+      type: demo.type,
+      content: demo.content,
+      confidence: demo.confidence,
+      source_platform: demo.source_platform,
+    });
+
+    setNodes((prev) => {
+      if (prev.length > 0) {
+        const avgX = prev.reduce((s, n) => s + n.x, 0) / prev.length;
+        const avgY = prev.reduce((s, n) => s + n.y, 0) / prev.length;
+        graphNode.x = avgX + (Math.random() - 0.5) * 60;
+        graphNode.y = avgY + (Math.random() - 0.5) * 60;
+      }
+      const updated = repositionNodes([...prev, graphNode]);
+      setEdges(buildEdgesFallback(updated));
+      return updated;
+    });
+
+    pushLog("save", `Memory extracted: ${demo.content}`);
+    setDemoIndex((i) => i + 1);
+  }, [demoIndex, pushLog]);
+
   /* ── Render ────────────────────────────────────────── */
 
   if (isPending && nodes.length === 0) {
@@ -1083,25 +1147,45 @@ const ContextGraphWidget: React.FC = () => {
         {activeTab === "graph" && (
           <>
             {/* Graph area — pulsing border when searching */}
-            <div
-              style={
-                isSearching
-                  ? {
-                      border: "1px solid #7c6aff",
-                      animation: "ctx-graph-border-pulse 1.5s ease-in-out infinite",
-                    }
-                  : undefined
-              }
-            >
-              {nodes.length === 0 ? (
-                <EmptyState />
-              ) : (
-                <ContextGraph
-                  nodes={nodes}
-                  edges={edges}
-                  onNodeSelect={handleNodeSelect}
-                />
-              )}
+            <div style={{ position: "relative" }}>
+              <div
+                style={
+                  isSearching
+                    ? {
+                        border: "1px solid #7c6aff",
+                        animation: "ctx-graph-border-pulse 1.5s ease-in-out infinite",
+                      }
+                    : undefined
+                }
+              >
+                {nodes.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  <ContextGraph
+                    nodes={nodes}
+                    edges={edges}
+                    onNodeSelect={handleNodeSelect}
+                  />
+                )}
+              </div>
+              <button
+                onClick={handleSimulateExtraction}
+                style={{
+                  position: "absolute",
+                  bottom: "12px",
+                  left: "12px",
+                  zIndex: 5,
+                  fontSize: "9px",
+                  color: "#5b6cff",
+                  border: "1px solid rgba(91, 108, 255, 0.25)",
+                  background: "rgba(91, 108, 255, 0.06)",
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                ⚡ Extract
+              </button>
             </div>
             {selectedNode && (
               <NodeDetail
