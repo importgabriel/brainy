@@ -10,7 +10,7 @@ import {
   loadSharedGraph,
   deleteNode,
   getEdgesForNodes,
-} from "../backend/src/graph/store.js";
+} from "./backend/src/graph/store.js";
 
 const server = new MCPServer({
   name: "switchvampire",
